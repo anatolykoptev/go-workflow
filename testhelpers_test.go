@@ -67,7 +67,7 @@ func (s *slowToolRunner) Execute(ctx context.Context, name string, args map[stri
 func newTestStore(t *testing.T) *WorkflowStore {
 	t.Helper()
 	dir := t.TempDir()
-	store, err := NewWorkflowStore(filepath.Join(dir, "workflows"))
+	store, err := NewFileStore(filepath.Join(dir, "workflows"))
 	if err != nil {
 		t.Fatal(err)
 	}

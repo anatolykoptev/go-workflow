@@ -1,173 +1,100 @@
 package workflow
 
-import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sync"
-)
+import "fmt"
 
-// WorkflowStore provides thread-safe in-memory storage with JSON file persistence.
-// Each workflow is stored as a separate file: {dir}/{id}.json
+// StoreBackend is the storage interface that concrete backends must implement.
+// Backends handle persistence; they do NOT clone workflows — the WorkflowStore wrapper handles that.
+type StoreBackend interface {
+	Save(w *Workflow) error
+	Load(id string) (*Workflow, bool)
+	Delete(id string) error
+	List(state WorkflowState) []*Workflow
+	ListByOwner(owner string) []*Workflow
+	FindByIdempotencyKey(key string) *Workflow
+	Modify(id string, fn func(w *Workflow)) error
+	Close() error
+}
+
+// WorkflowStore wraps a StoreBackend with clone-on-entry/exit semantics.
+// All public methods are safe for concurrent use (thread safety is the backend's responsibility).
 type WorkflowStore struct {
-	dir       string
-	workflows map[string]*Workflow
-	mu        sync.RWMutex
+	backend StoreBackend
 }
 
-// NewWorkflowStore creates a store backed by the given directory.
-// Loads all existing workflow files on creation.
-func NewWorkflowStore(dir string) (*WorkflowStore, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec,mnd
-		return nil, fmt.Errorf("create workflow dir: %w", err)
-	}
-
-	s := &WorkflowStore{
-		dir:       dir,
-		workflows: make(map[string]*Workflow),
-	}
-
-	if err := s.loadAll(); err != nil {
-		return nil, fmt.Errorf("load workflows: %w", err)
-	}
-
-	return s, nil
+// NewWorkflowStore creates a WorkflowStore that delegates to the given backend.
+func NewWorkflowStore(backend StoreBackend) *WorkflowStore {
+	return &WorkflowStore{backend: backend}
 }
 
-// Save persists a copy of the workflow to memory and disk (atomic write).
+// NewFileStore creates a WorkflowStore backed by JSON files in the given directory.
+func NewFileStore(dir string) (*WorkflowStore, error) {
+	fb, err := NewFileBackend(dir)
+	if err != nil {
+		return nil, err
+	}
+	return NewWorkflowStore(fb), nil
+}
+
+// Save persists a deep copy of the workflow to the backend.
 func (s *WorkflowStore) Save(w *Workflow) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cp := w.clone()
-	s.workflows[cp.ID] = cp
-	return s.writeToDisk(cp)
+	return s.backend.Save(w.clone())
 }
 
 // Load returns a deep copy of the workflow with the given ID.
 func (s *WorkflowStore) Load(id string) (*Workflow, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	w, ok := s.workflows[id]
+	w, ok := s.backend.Load(id)
 	if !ok {
 		return nil, false
 	}
 	return w.clone(), true
 }
 
-// Delete removes a workflow from memory and disk.
+// Delete removes a workflow from the backend.
 func (s *WorkflowStore) Delete(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.workflows, id)
-	path := filepath.Join(s.dir, id+".json")
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
+	return s.backend.Delete(id)
 }
 
-// List returns copies of all workflows, optionally filtered by state.
+// List returns deep copies of all workflows, optionally filtered by state.
 func (s *WorkflowStore) List(state WorkflowState) []*Workflow {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []*Workflow
-	for _, w := range s.workflows {
-		if state == "" || w.State == state {
-			result = append(result, w.clone())
-		}
+	results := s.backend.List(state)
+	cloned := make([]*Workflow, len(results))
+	for i, w := range results {
+		cloned[i] = w.clone()
 	}
-	return result
+	return cloned
 }
 
-// ListByOwner returns copies of workflows owned by the given session key.
+// ListByOwner returns deep copies of workflows owned by the given session key.
 func (s *WorkflowStore) ListByOwner(owner string) []*Workflow {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []*Workflow
-	for _, w := range s.workflows {
-		if w.Owner == owner {
-			result = append(result, w.clone())
-		}
+	results := s.backend.ListByOwner(owner)
+	cloned := make([]*Workflow, len(results))
+	for i, w := range results {
+		cloned[i] = w.clone()
 	}
-	return result
+	return cloned
 }
 
-// FindByIdempotencyKey returns a clone of the first non-terminal workflow with the given key, or nil.
+// FindByIdempotencyKey returns a deep copy of the first non-terminal workflow with the given key, or nil.
 func (s *WorkflowStore) FindByIdempotencyKey(key string) *Workflow {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, w := range s.workflows {
-		if w.IdempotencyKey == key && !w.IsTerminal() {
-			return w.clone()
-		}
+	w := s.backend.FindByIdempotencyKey(key)
+	if w == nil {
+		return nil
 	}
-	return nil
+	return w.clone()
 }
 
-// Modify atomically loads a workflow, applies fn to it, and saves it back.
-// This is the safe way to mutate a workflow from concurrent goroutines.
+// Modify atomically loads a workflow, applies fn, and saves it back.
+// Delegates directly to backend — the backend ensures atomicity.
 func (s *WorkflowStore) Modify(id string, fn func(w *Workflow)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	w, ok := s.workflows[id]
-	if !ok {
-		return fmt.Errorf("workflow %s not found", id)
-	}
-	fn(w)
-	return s.writeToDisk(w)
+	return s.backend.Modify(id, fn)
 }
 
-func (s *WorkflowStore) writeToDisk(w *Workflow) error {
-	data, err := json.MarshalIndent(w, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	path := filepath.Join(s.dir, w.ID+".json")
-	tmpPath := path + ".tmp"
-
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil { //nolint:gosec,mnd // 0600: user-owned workflow state file
-		return err
-	}
-	return os.Rename(tmpPath, path)
+// Close releases resources held by the backend.
+func (s *WorkflowStore) Close() error {
+	return s.backend.Close()
 }
 
-func (s *WorkflowStore) loadAll() error {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-
-		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
-		if err != nil {
-			continue
-		}
-
-		var w Workflow
-		if err := json.Unmarshal(data, &w); err != nil {
-			continue
-		}
-
-		s.workflows[w.ID] = &w
-	}
-
-	return nil
+// String returns a human-readable description of the store.
+func (s *WorkflowStore) String() string {
+	return fmt.Sprintf("WorkflowStore(%T)", s.backend)
 }

@@ -80,14 +80,14 @@ func TestStorePersistence(t *testing.T) {
 	wfDir := filepath.Join(dir, "workflows")
 
 	// Create and save
-	store1, _ := NewWorkflowStore(wfDir)
+	store1, _ := NewFileStore(wfDir)
 	wf := NewWorkflow("wf1", "Persistent", "", []Step{
 		{ID: "s1", Kind: StepTool, State: StepCompleted},
 	})
 	_ = store1.Save(wf)
 
 	// Reload from disk
-	store2, _ := NewWorkflowStore(wfDir)
+	store2, _ := NewFileStore(wfDir)
 	loaded, ok := store2.Load("wf1")
 	if !ok {
 		t.Fatal("workflow not found after reload")
@@ -103,7 +103,7 @@ func TestStorePersistence(t *testing.T) {
 func TestStoreAtomicWrite(t *testing.T) {
 	dir := t.TempDir()
 	wfDir := filepath.Join(dir, "workflows")
-	store, _ := NewWorkflowStore(wfDir)
+	store, _ := NewFileStore(wfDir)
 
 	wf := NewWorkflow("wf1", "Atomic", "", nil)
 	_ = store.Save(wf)
@@ -130,5 +130,33 @@ func TestStoreAtomicWrite(t *testing.T) {
 	err = store.Delete("nonexistent")
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("unexpected error deleting non-existent: %v", err)
+	}
+}
+
+func TestNewFileStore(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(filepath.Join(dir, "wf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wf := NewWorkflow("fs1", "FileStore", "owner1", []Step{
+		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "echo"}, State: StepPending},
+	})
+
+	if err := store.Save(wf); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, ok := store.Load("fs1")
+	if !ok {
+		t.Fatal("workflow not found after save")
+	}
+	if loaded.Name != "FileStore" {
+		t.Errorf("name = %q, want %q", loaded.Name, "FileStore")
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
