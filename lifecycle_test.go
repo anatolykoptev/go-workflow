@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestStartAsync_NonBlocking(t *testing.T) {
@@ -127,5 +128,43 @@ func TestPauseAll(t *testing.T) {
 	loaded3, _ := store.Load("wf3")
 	if loaded3.State != StatePending {
 		t.Errorf("wf3 state = %s, want pending (unchanged)", loaded3.State)
+	}
+}
+
+func TestRecoverAll(t *testing.T) {
+	runner := &mockToolRunner{results: map[string]string{"echo": "ok"}}
+	engine, store := newTestEngine(t, runner)
+
+	// Simulate crash: workflow stuck in running, step stuck in running
+	wf := NewWorkflow("wf1", "Crashed", "owner", []Step{
+		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "echo"}, State: StepCompleted},
+		{ID: "s2", Kind: StepTool, Config: map[string]any{"tool": "echo"}, State: StepRunning,
+			DependsOn: []string{"s1"}},
+	})
+	wf.State = StateRunning
+	_ = store.Save(wf)
+
+	// Completed workflow should be untouched
+	wf2 := NewWorkflow("wf2", "Done", "owner", nil)
+	wf2.State = StateCompleted
+	_ = store.Save(wf2)
+
+	recovered := engine.RecoverAll(context.Background())
+	if len(recovered) != 1 || recovered[0] != "wf1" {
+		t.Errorf("recovered = %v, want [wf1]", recovered)
+	}
+
+	// Wait for async execution
+	time.Sleep(200 * time.Millisecond)
+
+	loaded, _ := store.Load("wf1")
+	if loaded.State != StateCompleted {
+		t.Errorf("wf1 state = %s, want completed", loaded.State)
+	}
+
+	// Verify completed workflow untouched
+	loaded2, _ := store.Load("wf2")
+	if loaded2.State != StateCompleted {
+		t.Errorf("wf2 state = %s, want completed (should be unchanged)", loaded2.State)
 	}
 }

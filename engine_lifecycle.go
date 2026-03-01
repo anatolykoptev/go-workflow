@@ -239,6 +239,45 @@ func (e *Engine) PauseAll() int {
 	return paused
 }
 
+// RecoverAll finds workflows stuck in StateRunning at startup (sign of a crash)
+// and resumes them. Running steps are reset to pending. Returns recovered IDs.
+func (e *Engine) RecoverAll(ctx context.Context) []string {
+	running := e.store.List(StateRunning)
+	var recovered []string
+	for _, w := range running {
+		_ = e.store.Modify(w.ID, func(w *Workflow) {
+			for i := range w.Steps {
+				if w.Steps[i].State == StepRunning {
+					w.Steps[i].State = StepPending
+					w.Steps[i].StartedAt = 0
+					e.log().Info("reset crashed step",
+						"component", "workflow",
+						"workflow", w.ID,
+						"step", w.Steps[i].ID,
+					)
+				}
+			}
+			w.UpdatedAt = time.Now().UnixMilli()
+		})
+		recovered = append(recovered, w.ID)
+		e.log().Info("recovered after crash",
+			"component", "workflow",
+			"workflow", w.ID,
+		)
+		go func(id string) {
+			if err := e.RunToCompletion(ctx, id); err != nil {
+				e.log().Error("recovery execution failed",
+					"component", "workflow",
+					"workflow", id,
+					"error", err.Error(),
+				)
+			}
+			e.notifyCompletion(id)
+		}(w.ID)
+	}
+	return recovered
+}
+
 // ResumeAll resumes all paused workflows. Used after restart.
 // Returns the IDs of resumed workflows.
 func (e *Engine) ResumeAll(ctx context.Context) []string {
