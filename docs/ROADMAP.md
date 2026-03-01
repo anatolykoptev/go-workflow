@@ -22,11 +22,11 @@ Inspired by: Temporal (timeout hierarchy), Hatchet (exponential backoff, DEAD_LE
 
 Inspired by: go-workflows (multi-backend), DBOS (Postgres transactional checkpointing), Hatchet (SKIP LOCKED queue).
 
-- [ ] `StoreBackend` interface: `Save`, `Load`, `Delete`, `List`, `Modify` — extracted from current WorkflowStore
-- [ ] JSON file backend (current behavior, default)
-- [ ] PostgreSQL backend: step checkpointing via INSERT per completed step, SKIP LOCKED for work queue
-- [ ] Step checkpointing: on crash, resume from last completed step (not restart entire workflow)
-- [ ] SQLite backend (for tests and single-binary deployments)
+- [x] `StoreBackend` interface: `Save`, `Load`, `Delete`, `List`, `Modify` — extracted from current WorkflowStore
+- [x] JSON file backend (current behavior, default)
+- [x] PostgreSQL backend: JSONB snapshots, SELECT FOR UPDATE, partial unique index for idempotency
+- [x] Step checkpointing: on crash, resume from last completed step (RecoverAll)
+- [x] SQLite backend (for tests and single-binary deployments)
 
 ## v0.4.0 — Cron & Event Triggers
 
