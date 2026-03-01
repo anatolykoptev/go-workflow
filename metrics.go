@@ -26,6 +26,8 @@ type Metrics struct {
 	TriggersFired          atomic.Int64
 	SchedulerJobsExecuted  atomic.Int64
 	SchedulerJobsFailed    atomic.Int64
+	LLMTokensInput         atomic.Int64
+	LLMTokensOutput        atomic.Int64
 }
 
 // GlobalMetrics is the singleton metrics instance.
@@ -50,6 +52,10 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Hooks fired: %d", m.HooksFired.Load()))
 	lines = append(lines, fmt.Sprintf("  Triggers evaluated: %d", m.TriggersEvaluated.Load()))
 	lines = append(lines, fmt.Sprintf("  Triggers fired: %d", m.TriggersFired.Load()))
+	lines = append(lines, fmt.Sprintf("  Scheduler jobs executed: %d", m.SchedulerJobsExecuted.Load()))
+	lines = append(lines, fmt.Sprintf("  Scheduler jobs failed: %d", m.SchedulerJobsFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  LLM tokens input: %d", m.LLMTokensInput.Load()))
+	lines = append(lines, fmt.Sprintf("  LLM tokens output: %d", m.LLMTokensOutput.Load()))
 	return strings.Join(lines, "\n")
 }
 
@@ -71,4 +77,8 @@ func (m *Metrics) Reset() {
 	m.HooksFired.Store(0)
 	m.TriggersEvaluated.Store(0)
 	m.TriggersFired.Store(0)
+	m.SchedulerJobsExecuted.Store(0)
+	m.SchedulerJobsFailed.Store(0)
+	m.LLMTokensInput.Store(0)
+	m.LLMTokensOutput.Store(0)
 }

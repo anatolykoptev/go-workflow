@@ -115,6 +115,16 @@ func (e *LLMExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) err
 
 	step.Result = resp.Content
 	wf.Context[step.ID] = resp.Content
+
+	if resp.InputTokens > 0 || resp.OutputTokens > 0 {
+		wf.Context[step.ID+"_usage"] = map[string]any{
+			"input_tokens":  resp.InputTokens,
+			"output_tokens": resp.OutputTokens,
+			"model":         resp.Model,
+		}
+		GlobalMetrics.LLMTokensInput.Add(int64(resp.InputTokens))
+		GlobalMetrics.LLMTokensOutput.Add(int64(resp.OutputTokens))
+	}
 	return nil
 }
 

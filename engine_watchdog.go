@@ -191,6 +191,14 @@ func (e *Engine) StartWatchdog(interval time.Duration) {
 	}
 	e.watchdogStop = make(chan struct{})
 
+	if e.scheduler != nil {
+		if err := e.scheduler.Start(); err != nil {
+			e.log().Error("scheduler start failed", "error", err.Error())
+		} else {
+			e.log().Info("scheduler started", "component", "workflow")
+		}
+	}
+
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -233,5 +241,8 @@ func (e *Engine) StartWatchdog(interval time.Duration) {
 func (e *Engine) StopWatchdog() {
 	if e.watchdogStop != nil {
 		close(e.watchdogStop)
+	}
+	if e.scheduler != nil {
+		e.scheduler.Stop()
 	}
 }

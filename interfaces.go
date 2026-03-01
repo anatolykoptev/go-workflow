@@ -38,7 +38,10 @@ type LLMMessage struct {
 	Content string
 }
 
-// LLMResponse is the model's reply.
+// LLMResponse is the model's reply with optional token usage data.
 type LLMResponse struct {
-	Content string
+	Content      string
+	Model        string
+	InputTokens  int
+	OutputTokens int
 }

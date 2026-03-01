@@ -29,6 +29,8 @@ type Engine struct {
 	hooks              HookPublisher
 	logger             *slog.Logger
 	watchdogStop       chan struct{}
+	scheduler          *Scheduler
+	triggers           *TriggerService
 }
 
 // EngineOption configures an Engine.
@@ -97,6 +99,16 @@ func WithApprovalNotifier(fn ApprovalNotifier) EngineOption {
 // WithCompletionNotifier sets the callback for workflow completion reports.
 func WithCompletionNotifier(fn CompletionNotifier) EngineOption {
 	return func(e *Engine) { e.completionNotifier = fn }
+}
+
+// WithScheduler sets the scheduler for time-based triggers.
+func WithScheduler(s *Scheduler) EngineOption {
+	return func(e *Engine) { e.scheduler = s }
+}
+
+// WithTriggers sets the trigger service for event-based triggers.
+func WithTriggers(ts *TriggerService) EngineOption {
+	return func(e *Engine) { e.triggers = ts }
 }
 
 // NewEngine creates a workflow engine with functional options.

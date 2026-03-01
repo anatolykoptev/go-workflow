@@ -1,2 +1,5 @@
 # False positive: dummy API keys in MaskSecrets test data
 aliases_test.go:generic-api-key:517
+
+# False positive: idempotency key example in docs
+README.md:generic-api-key:53

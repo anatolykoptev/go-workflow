@@ -32,11 +32,11 @@ Inspired by: go-workflows (multi-backend), DBOS (Postgres transactional checkpoi
 
 Inspired by: Hatchet (TriggeredByCron/ByEvent), Inngest (waitForEvent with match expression).
 
-- [ ] Extract cron/scheduler from Vaelor pkg/cron
-- [ ] Time-based triggers: `at` (one-shot), `every` (interval), `cron` (expression)
-- [ ] Event-based triggers: hook event → auto-start workflow
-- [ ] `WaitForEvent` step type: suspend until matching event arrives (with timeout)
-- [ ] Trigger→workflow auto-start with parameter injection
+- [x] Extract cron/scheduler from Vaelor pkg/cron
+- [x] Time-based triggers: `at` (one-shot), `every` (interval), `cron` (expression)
+- [x] Event-based triggers: hook event → auto-start workflow
+- [x] `WaitForEvent` step type: suspend until matching event arrives (with timeout)
+- [x] Trigger→workflow auto-start with parameter injection
 
 ## v0.5.0 — Observability
 

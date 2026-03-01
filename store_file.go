@@ -47,14 +47,16 @@ func (fb *FileBackend) Save(w *Workflow) error {
 	return fb.writeToDisk(w)
 }
 
-// Load returns the raw workflow pointer (no clone).
-// The caller (WorkflowStore) is responsible for cloning.
+// Load returns a clone of the workflow (safe to read without lock after return).
 func (fb *FileBackend) Load(id string) (*Workflow, bool) {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
 
 	w, ok := fb.workflows[id]
-	return w, ok
+	if !ok {
+		return nil, false
+	}
+	return w.clone(), true
 }
 
 // Delete removes a workflow from memory and disk.
@@ -70,7 +72,7 @@ func (fb *FileBackend) Delete(id string) error {
 	return nil
 }
 
-// List returns raw workflow pointers filtered by state (empty = all).
+// List returns cloned workflow pointers filtered by state (empty = all).
 func (fb *FileBackend) List(state WorkflowState) []*Workflow {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
@@ -78,13 +80,13 @@ func (fb *FileBackend) List(state WorkflowState) []*Workflow {
 	var result []*Workflow
 	for _, w := range fb.workflows {
 		if state == "" || w.State == state {
-			result = append(result, w)
+			result = append(result, w.clone())
 		}
 	}
 	return result
 }
 
-// ListByOwner returns raw workflow pointers owned by the given session key.
+// ListByOwner returns cloned workflow pointers owned by the given session key.
 func (fb *FileBackend) ListByOwner(owner string) []*Workflow {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
@@ -92,20 +94,20 @@ func (fb *FileBackend) ListByOwner(owner string) []*Workflow {
 	var result []*Workflow
 	for _, w := range fb.workflows {
 		if w.Owner == owner {
-			result = append(result, w)
+			result = append(result, w.clone())
 		}
 	}
 	return result
 }
 
-// FindByIdempotencyKey returns the first non-terminal workflow with the given key, or nil.
+// FindByIdempotencyKey returns a clone of the first non-terminal workflow with the given key.
 func (fb *FileBackend) FindByIdempotencyKey(key string) *Workflow {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
 
 	for _, w := range fb.workflows {
 		if w.IdempotencyKey == key && !w.IsTerminal() {
-			return w
+			return w.clone()
 		}
 	}
 	return nil
