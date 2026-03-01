@@ -1,0 +1,292 @@
+package workflow
+
+import (
+	"fmt"
+	"log/slog"
+	"time"
+)
+
+// ApprovalNotifier is called when a workflow needs user approval.
+// Implementations should send a notification with approve/reject options.
+type ApprovalNotifier func(wf *Workflow, step *Step)
+
+// CompletionNotifier is called when a workflow reaches a terminal state
+// (completed, failed, cancelled). Used to send result reports to the owner.
+type CompletionNotifier func(wf *Workflow)
+
+// HookPublisher fires lifecycle events. Satisfied by hooks.Registry.
+type HookPublisher interface {
+	Fire(event string, data map[string]any) int
+}
+
+// Engine orchestrates workflow execution: DAG resolution, step dispatch, persistence.
+type Engine struct {
+	store              *WorkflowStore
+	executors          map[StepKind]StepExecutor
+	bus                MessagePublisher
+	approvalNotifier   ApprovalNotifier
+	completionNotifier CompletionNotifier
+	hooks              HookPublisher
+	logger             *slog.Logger
+	watchdogStop       chan struct{}
+}
+
+// EngineOption configures an Engine.
+type EngineOption func(*Engine)
+
+// WithLogger sets the structured logger for the engine.
+func WithLogger(l *slog.Logger) EngineOption {
+	return func(e *Engine) { e.logger = l }
+}
+
+// WithHookPublisher sets the hook publisher for workflow lifecycle events.
+func WithHookPublisher(h HookPublisher) EngineOption {
+	return func(e *Engine) { e.hooks = h }
+}
+
+// WithMessagePublisher sets the message publisher for message steps.
+func WithMessagePublisher(m MessagePublisher) EngineOption {
+	return func(e *Engine) {
+		e.bus = m
+		e.executors[StepMessage] = NewMessageExecutor(m)
+	}
+}
+
+// WithLLMProvider sets the LLM provider for LLM steps.
+func WithLLMProvider(p LLMProvider) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepLLM] = NewLLMExecutor(p)
+	}
+}
+
+// WithToolRunner sets the tool runner for tool steps.
+func WithToolRunner(t ToolRunner) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepTool] = NewToolExecutor(t)
+	}
+}
+
+// WithAgentRunner sets the agent runner for agent steps.
+func WithAgentRunner(a AgentRunner) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepAgent] = NewAgentExecutor(a)
+	}
+}
+
+// WithA2ACaller sets the A2A caller for A2A steps.
+func WithA2ACaller(c A2ACaller) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepA2A] = NewA2AExecutor(c)
+	}
+}
+
+// WithSkillResolver sets the skill resolver for LLM steps.
+func WithSkillResolver(s SkillResolver) EngineOption {
+	return func(e *Engine) {
+		if llm, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+			llm.SetSkills(s)
+		}
+	}
+}
+
+// WithApprovalNotifier sets the callback for approval notifications.
+func WithApprovalNotifier(fn ApprovalNotifier) EngineOption {
+	return func(e *Engine) { e.approvalNotifier = fn }
+}
+
+// WithCompletionNotifier sets the callback for workflow completion reports.
+func WithCompletionNotifier(fn CompletionNotifier) EngineOption {
+	return func(e *Engine) { e.completionNotifier = fn }
+}
+
+// NewEngine creates a workflow engine with functional options.
+// Only store is required. All other dependencies are optional.
+func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
+	e := &Engine{
+		store:  store,
+		logger: slog.Default(),
+		executors: map[StepKind]StepExecutor{
+			StepCondition: NewConditionExecutor(),
+			StepApproval:  NewApprovalExecutor(),
+			StepTransform: NewTransformExecutor(),
+		},
+	}
+
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	// Sub-workflow executor always points back to this engine
+	e.executors[StepWorkflow] = NewSubWorkflowExecutor(e)
+
+	return e
+}
+
+// SetApprovalNotifier sets the callback for approval notifications.
+func (e *Engine) SetApprovalNotifier(fn ApprovalNotifier) {
+	e.approvalNotifier = fn
+}
+
+// SetAgentRunner registers an AgentExecutor for StepAgent steps.
+// Called after engine creation to avoid circular dependency with agent package.
+func (e *Engine) SetAgentRunner(runner AgentRunner) {
+	e.executors[StepAgent] = NewAgentExecutor(runner)
+}
+
+// SetSkills sets the skill resolver for LLM steps that reference skills by name.
+func (e *Engine) SetSkills(sr SkillResolver) {
+	if llm, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+		llm.SetSkills(sr)
+	}
+}
+
+// SetA2ACaller registers an A2AExecutor for StepA2A steps.
+// Called after engine creation to avoid circular dependency with a2a package.
+func (e *Engine) SetA2ACaller(caller A2ACaller) {
+	e.executors[StepA2A] = NewA2AExecutor(caller)
+}
+
+// SetHooks sets the hook publisher for workflow lifecycle events.
+func (e *Engine) SetHooks(h HookPublisher) {
+	e.hooks = h
+}
+
+// SetCompletionNotifier sets the callback for workflow completion reports.
+func (e *Engine) SetCompletionNotifier(fn CompletionNotifier) {
+	e.completionNotifier = fn
+}
+
+// log returns the engine's logger, falling back to slog.Default() if nil.
+// This makes logging safe when Engine is constructed as a struct literal in tests.
+func (e *Engine) log() *slog.Logger {
+	if e.logger != nil {
+		return e.logger
+	}
+	return slog.Default()
+}
+
+// Store returns the underlying workflow store.
+func (e *Engine) Store() *WorkflowStore {
+	return e.store
+}
+
+// notifyCompletion calls the completion notifier if set and workflow is terminal.
+func (e *Engine) notifyCompletion(workflowID string) {
+	if e.completionNotifier == nil {
+		return
+	}
+	w, ok := e.store.Load(workflowID)
+	if !ok || !w.IsTerminal() {
+		return
+	}
+	e.completionNotifier(w)
+}
+
+// fireHook fires a hook event if a publisher is set. Nil-safe.
+func (e *Engine) fireHook(event string, data map[string]any) {
+	if e.hooks != nil {
+		e.hooks.Fire(event, data)
+		GlobalMetrics.HooksFired.Add(1)
+	}
+}
+
+// startWorkflow transitions a pending workflow to running state.
+// Shared by Start and StartAsync to avoid duplication.
+func (e *Engine) startWorkflow(workflowID string) (*Workflow, error) {
+	w, ok := e.store.Load(workflowID)
+	if !ok {
+		return nil, fmt.Errorf("workflow %s not found", workflowID)
+	}
+
+	if w.State != StatePending {
+		return nil, fmt.Errorf("workflow %s is %s, expected pending", workflowID, w.State)
+	}
+
+	if err := e.store.Modify(workflowID, func(w *Workflow) {
+		w.State = StateRunning
+		w.UpdatedAt = time.Now().UnixMilli()
+	}); err != nil {
+		return nil, err
+	}
+
+	GlobalMetrics.WorkflowsCreated.Add(1)
+	e.fireHook(EventWorkflowStarted, map[string]any{
+		"workflow_id":   workflowID,
+		"workflow_name": w.Name,
+	})
+	return w, nil
+}
+
+// findAllRunnable returns IDs of all steps that are pending and have all deps completed.
+func (e *Engine) findAllRunnable(w *Workflow) []string {
+	completed := make(map[string]bool)
+	for _, s := range w.Steps {
+		if s.State == StepCompleted || s.State == StepSkipped {
+			completed[s.ID] = true
+		}
+	}
+
+	var runnable []string
+	for _, s := range w.Steps {
+		if s.State != StepPending {
+			continue
+		}
+
+		allDepsMet := true
+		for _, dep := range s.DependsOn {
+			if !completed[dep] {
+				allDepsMet = false
+				break
+			}
+		}
+
+		if allDepsMet {
+			runnable = append(runnable, s.ID)
+		}
+	}
+
+	return runnable
+}
+
+// applyStepFailure handles on_error routing for a failed step inside a store.Modify callback.
+// Returns true if the error was handled (skip/branch), false if the workflow should fail.
+func applyStepFailure(w *Workflow, stepID, errMsg string) bool {
+	s := w.GetStep(stepID)
+	if s == nil {
+		return false
+	}
+
+	onError := s.GetOnError()
+	switch {
+	case onError == OnErrorSkip:
+		s.State = StepSkipped
+		s.Error = errMsg
+		return true
+
+	case onError != "" && onError != OnErrorFail:
+		s.State = StepSkipped
+		s.Error = errMsg
+		w.Context[s.ID+"_error"] = errMsg
+		w.Context[s.ID+"_failed"] = true
+		if handler := w.GetStep(onError); handler != nil && handler.State == StepPending {
+			handler.DependsOn = []string{}
+		}
+		return true
+
+	default:
+		s.State = StepFailed
+		s.Error = errMsg
+		w.State = StateFailed
+		w.Error = fmt.Sprintf("step %s failed: %s", stepID, errMsg)
+		return false
+	}
+}
+
+// loadWorkflow loads a workflow or returns a formatted error.
+func (e *Engine) loadWorkflow(workflowID string) (*Workflow, error) {
+	w, ok := e.store.Load(workflowID)
+	if !ok {
+		return nil, fmt.Errorf("workflow %s not found", workflowID)
+	}
+	return w, nil
+}

@@ -1,0 +1,69 @@
+package workflow
+
+import (
+	"fmt"
+	"strings"
+	"sync/atomic"
+)
+
+// Metrics tracks workflow execution counters.
+type Metrics struct {
+	WorkflowsCreated   atomic.Int64
+	WorkflowsCompleted atomic.Int64
+	WorkflowsFailed    atomic.Int64
+	WorkflowsCancelled atomic.Int64
+	StepsExecuted      atomic.Int64
+	StepsRetried       atomic.Int64
+	StepsSkipped       atomic.Int64
+	ApprovalsPending   atomic.Int64
+	AgentStepsExecuted atomic.Int64
+	AgentStepsFailed   atomic.Int64
+	A2AStepsExecuted   atomic.Int64
+	A2AStepsFailed     atomic.Int64
+	HooksFired         atomic.Int64
+	TriggersEvaluated  atomic.Int64
+	TriggersFired      atomic.Int64
+}
+
+// GlobalMetrics is the singleton metrics instance.
+var GlobalMetrics = &Metrics{}
+
+// Summary returns a formatted string of all metrics.
+func (m *Metrics) Summary() string {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("  Workflows created: %d", m.WorkflowsCreated.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflows completed: %d", m.WorkflowsCompleted.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflows failed: %d", m.WorkflowsFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflows cancelled: %d", m.WorkflowsCancelled.Load()))
+	lines = append(lines, fmt.Sprintf("  Steps executed: %d", m.StepsExecuted.Load()))
+	lines = append(lines, fmt.Sprintf("  Steps retried: %d", m.StepsRetried.Load()))
+	lines = append(lines, fmt.Sprintf("  Steps skipped: %d", m.StepsSkipped.Load()))
+	lines = append(lines, fmt.Sprintf("  Approvals pending: %d", m.ApprovalsPending.Load()))
+	lines = append(lines, fmt.Sprintf("  Agent steps executed: %d", m.AgentStepsExecuted.Load()))
+	lines = append(lines, fmt.Sprintf("  Agent steps failed: %d", m.AgentStepsFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  A2A steps executed: %d", m.A2AStepsExecuted.Load()))
+	lines = append(lines, fmt.Sprintf("  A2A steps failed: %d", m.A2AStepsFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  Hooks fired: %d", m.HooksFired.Load()))
+	lines = append(lines, fmt.Sprintf("  Triggers evaluated: %d", m.TriggersEvaluated.Load()))
+	lines = append(lines, fmt.Sprintf("  Triggers fired: %d", m.TriggersFired.Load()))
+	return strings.Join(lines, "\n")
+}
+
+// Reset zeroes all counters.
+func (m *Metrics) Reset() {
+	m.WorkflowsCreated.Store(0)
+	m.WorkflowsCompleted.Store(0)
+	m.WorkflowsFailed.Store(0)
+	m.WorkflowsCancelled.Store(0)
+	m.StepsExecuted.Store(0)
+	m.StepsRetried.Store(0)
+	m.StepsSkipped.Store(0)
+	m.ApprovalsPending.Store(0)
+	m.AgentStepsExecuted.Store(0)
+	m.AgentStepsFailed.Store(0)
+	m.A2AStepsExecuted.Store(0)
+	m.A2AStepsFailed.Store(0)
+	m.HooksFired.Store(0)
+	m.TriggersEvaluated.Store(0)
+	m.TriggersFired.Store(0)
+}

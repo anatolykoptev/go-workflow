@@ -1,0 +1,2 @@
+# False positive: dummy API keys in MaskSecrets test data
+aliases_test.go:generic-api-key:517
