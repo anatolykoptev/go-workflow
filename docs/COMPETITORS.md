@@ -32,6 +32,64 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | **Ops complexity** | zero | very high | medium | low | medium | medium | high | medium | zero | low | medium |
 | **Go native** | library | SDK | SDK | — | — | — | Go SDK | Go SDK | library | library | Go SDK |
 
+## Code-Level Comparison (go-code analysis)
+
+### go-workflow vs go-workflows (cschleiden)
+
+| Metric | go-workflow | go-workflows |
+|--------|-------------|-------------|
+| Files | 18 | 282 |
+| Total LOC | 6,312 | 31,838 |
+| Avg func complexity | 4.18 | 2.81 |
+| Test ratio | 22% | 27% |
+| Doc ratio | 49% | 21% |
+| External deps | 0 | 77 |
+| Interfaces | 9 | 34 |
+| Grade | B | B |
+
+**go-workflow wins**: error handling (structured `ValidationError` with StepID/Field context), workflow validation (cycle detection, dep checks), security policies, built-in metrics, AI step types, n8n compat, zero external deps.
+
+**go-workflows wins**: lower avg complexity (2.81 vs 4.18), event-sourced coroutine model (superior fault tolerance), tester package with activity/sub-workflow mocking, multi-backend persistence (memory/SQLite/MySQL/PG/Redis), workflow/activity worker separation.
+
+**Key architectural difference**: go-workflows uses Temporal-style event sourcing with command pattern — deterministic replay from history. go-workflow uses snapshot-based DAG with explicit `DependsOn` edges. Different tradeoffs: replay gives better durability, DAG gives simpler mental model for AI workflows.
+
+### go-workflow vs Hatchet
+
+| Metric | go-workflow | Hatchet |
+|--------|-------------|---------|
+| Files | 18 | 749 |
+| Total LOC | 6,312 | 163,665 |
+| Avg func complexity | 4.18 | 4.24 |
+| Error handling ratio | 39% | 54% |
+| External deps | 0 | 300 |
+| Interfaces | 9 | 119 |
+| Grade | B | C |
+
+**go-workflow wins**: workflow validation (Hatchet has none — no cycle detection, no dep checks), security policies (tool permissions, step budgets), functional options pattern for engine config, secret masking, n8n compat. Hatchet uses `panic` for missing actions — go-workflow returns errors.
+
+**Hatchet wins**: `RetryBackoffFactor` + `RetryMaxBackoff` on Step struct (exponential backoff), `ScheduleTimeout` per step, `IsDurable` flag, `syncx.Map` for concurrent access (vs RWMutex), Postgres persistence with strong typing (uuid, pgtype), gRPC worker dispatch.
+
+**Key pattern to adopt**: Hatchet's Step struct fields — `RetryBackoffFactor`, `RetryMaxBackoff`, `ScheduleTimeout` — directly inform our v0.2 roadmap.
+
+### go-workflow vs DBOS Transact Go
+
+| Metric | go-workflow | DBOS Go |
+|--------|-------------|---------|
+| Files | 18 | 42 |
+| Total LOC | 6,312 | 28,360 |
+| Avg func complexity | 4.18 | 6.04 |
+| Test ratio | 22% | 38% |
+| Doc ratio | 49% | 56% |
+| Error handling ratio | 39% | 57% |
+| External deps | 0 | 29 |
+| Grade | B | B |
+
+**go-workflow wins**: workflow validation, security policies, AI step types, n8n compat, zero deps, lower complexity. DBOS has no validation, no security policies, no transform steps.
+
+**DBOS wins**: idempotent step execution via `checkOperationExecution` + `recordOperationResult` (crash-safe), `WorkflowQueue` with worker/global concurrency + priority + rate limiting, persistent metrics storage, higher test ratio (38% vs 22%), richer error wrapping.
+
+**Key pattern to adopt**: DBOS's `RunAsStep` pattern — check if step was already executed before running, record result atomically. This is the core of step checkpointing for our v0.3.
+
 ## Detailed Analysis
 
 ### Tier 1: Direct Competitors (embedded Go workflow)
@@ -39,12 +97,12 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 #### go-workflows (cschleiden/go-workflows) — 431 stars
 Temporal-inspired embedded engine. Pluggable backends (memory/SQLite/PG/Redis). Deterministic replay model — all Temporal constraints apply (no native goroutines, no `time.Now()`, no `select`).
 
-**vs go-workflow**: We win on simplicity (no determinism constraints), AI-native steps, n8n compat. They win on durability (event sourcing replay) and multi-backend persistence.
+**vs go-workflow**: We win on simplicity (no determinism constraints), AI-native steps, n8n compat, validation, security. They win on durability (event sourcing replay), multi-backend persistence, lower complexity, better test mocking.
 
 #### DBOS Transact Go — 591 stars
-"Postgres IS the workflow engine." Each step = Postgres transaction. Automatic checkpointing. No determinism constraints.
+"Postgres IS the workflow engine." Each step = Postgres transaction. Automatic checkpointing via `checkOperationExecution` + `recordOperationResult`. No determinism constraints. `WorkflowQueue` with concurrency + priority + rate limiting.
 
-**vs go-workflow**: They win on durability (Postgres transactional checkpointing). We win on zero infrastructure (no Postgres needed), AI steps, security policy.
+**vs go-workflow**: They win on durability (Postgres transactional checkpointing, crash-safe step idempotency), higher test coverage (38%), `WorkflowQueue` with rate limiting. We win on zero infrastructure, AI steps, security policy, workflow validation, lower complexity.
 
 ### Tier 2: Server-based Workflow Engines (Go)
 
@@ -58,9 +116,9 @@ Industry standard for durable execution. Event sourcing replay. Extremely reliab
 #### Hatchet — 6.7k stars
 "Temporal for the rest of us." Postgres-only (SKIP LOCKED queue), gRPC streaming, <20ms latency.
 
-**Key insight**: Bidirectional adjacency list (`Parents` + `Children`) in step definitions. `DEAD_LETTERED` status for exhausted retries. `HatchetContext` wraps standard `context.Context`. Concurrency: semaphore + rate limiter per worker.
+**Key insight**: `RetryBackoffFactor` + `RetryMaxBackoff` + `ScheduleTimeout` on Step struct. `DEAD_LETTERED` status for exhausted retries. `syncx.Map` for concurrent store access. Concurrency: semaphore + rate limiter per worker. 749 files / 163k LOC but lower grade (C) due to `panic` for missing actions and max complexity of 114.
 
-**vs go-workflow**: Hatchet has better retry policies and Postgres durability. We have AI-native steps and zero infrastructure.
+**vs go-workflow**: Hatchet has exponential backoff, per-step timeout, Postgres durability. We have workflow validation (Hatchet has zero!), security policies, AI-native steps, zero infrastructure, functional options config. Comparable complexity (4.18 vs 4.24) despite Hatchet being 26x larger.
 
 #### Inngest — 5k stars
 Event-driven workflow platform. `step.waitForEvent()` for durable HITL. Concurrency per-entity key.
