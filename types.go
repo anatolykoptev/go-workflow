@@ -3,7 +3,9 @@ package workflow
 import (
 	"encoding/json"
 	"maps"
+	"math"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -28,7 +30,8 @@ const (
 	StepRunning   StepState = "running"
 	StepCompleted StepState = "completed"
 	StepFailed    StepState = "failed"
-	StepSkipped   StepState = "skipped"
+	StepSkipped      StepState = "skipped"
+	StepDeadLettered StepState = "dead_lettered"
 )
 
 // StepKind defines the type of work a step performs.
@@ -119,10 +122,11 @@ func IsValidStepKind(kind StepKind) bool {
 
 // Workflow is a multi-step execution plan with DAG dependencies and persistence.
 type Workflow struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	TemplateName  string          `json:"template_name,omitempty"` // source template name (for concurrency guards)
-	Description   string          `json:"description,omitempty"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	TemplateName   string          `json:"template_name,omitempty"` // source template name (for concurrency guards)
+	Description    string          `json:"description,omitempty"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"` // dedup key — only one active workflow per key
 	Steps         []Step          `json:"steps"`
 	State         WorkflowState   `json:"state"`
 	CurrentStep   string          `json:"current_step,omitempty"`
@@ -179,6 +183,96 @@ func (s *Step) GetOnError() string {
 		return v
 	}
 	return OnErrorFail
+}
+
+// GetBackoffMultiplier returns the backoff multiplier from retry config, default 1.0 (no backoff).
+func (s *Step) GetBackoffMultiplier() float64 {
+	r, ok := s.Config["retry"].(map[string]any)
+	if !ok {
+		return 1.0
+	}
+	v, _ := r["backoff_multiplier"].(float64)
+	if v <= 0 {
+		return 1.0
+	}
+	return v
+}
+
+// GetMaxDelayMS returns the max delay cap from retry config, default 0 (no cap).
+func (s *Step) GetMaxDelayMS() int64 {
+	r, ok := s.Config["retry"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	v, _ := r["max_delay_ms"].(float64)
+	return int64(v)
+}
+
+// GetTimeoutMS returns the per-step timeout from config, default 0 (no timeout).
+func (s *Step) GetTimeoutMS() int64 {
+	v, _ := s.Config["timeout_ms"].(float64)
+	return int64(v)
+}
+
+// GetRetryOn returns patterns that must match for retry to happen. Empty = retry on any error.
+func (s *Step) GetRetryOn() []string {
+	r, ok := s.Config["retry"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return toStringSlice(r["retry_on"])
+}
+
+// GetSkipOn returns patterns that skip retry if matched. Empty = never skip.
+func (s *Step) GetSkipOn() []string {
+	r, ok := s.Config["retry"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return toStringSlice(r["skip_on"])
+}
+
+// toStringSlice converts an any (expected []any of strings) to []string.
+func toStringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// calculateBackoff computes the retry delay with exponential backoff.
+// attempt is 1-based (retry 1 uses multiplier^0 = baseMS).
+func calculateBackoff(baseMS int64, attempt int, multiplier float64, maxMS int64) int64 {
+	if multiplier <= 1.0 {
+		return baseMS
+	}
+	delay := float64(baseMS) * math.Pow(multiplier, float64(attempt-1))
+	d := int64(delay)
+	if maxMS > 0 && d > maxMS {
+		d = maxMS
+	}
+	return d
+}
+
+// matchesAnyPattern returns true if msg contains any pattern (case-insensitive substring).
+func matchesAnyPattern(msg string, patterns []string) bool {
+	lower := strings.ToLower(msg)
+	for _, p := range patterns {
+		if strings.Contains(lower, strings.ToLower(p)) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewWorkflow creates a workflow with sensible defaults.

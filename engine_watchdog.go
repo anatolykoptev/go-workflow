@@ -114,6 +114,17 @@ func IsTransientError(errMsg string) bool {
 	return false
 }
 
+// findRetryableFailedStep returns the ID of the first StepFailed step in the workflow.
+// Returns "" if no retryable step is found (e.g., all failures are dead-lettered).
+func findRetryableFailedStep(wf *Workflow) string {
+	for _, s := range wf.Steps {
+		if s.State == StepFailed {
+			return s.ID
+		}
+	}
+	return "" // no retryable step (may be dead-lettered only)
+}
+
 // AutoRetryFailed checks recently failed workflows for transient errors and retries them.
 // Returns the number of workflows retried. Only retries workflows that failed within maxAge.
 func (e *Engine) AutoRetryFailed(maxAge time.Duration) int {
@@ -129,14 +140,7 @@ func (e *Engine) AutoRetryFailed(maxAge time.Duration) int {
 			continue // permanent error
 		}
 
-		// Find the failed step and reset it
-		var failedStepID string
-		for _, s := range wf.Steps {
-			if s.State == StepFailed {
-				failedStepID = s.ID
-				break
-			}
-		}
+		failedStepID := findRetryableFailedStep(wf)
 		if failedStepID == "" {
 			continue
 		}

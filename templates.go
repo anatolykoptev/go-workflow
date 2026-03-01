@@ -90,64 +90,87 @@ func (ts *TemplateStore) Instantiate(templateName, workflowID, owner string, par
 		merged[k] = v
 	}
 
-	steps := make([]Step, 0, len(tmpl.Steps))
-	for _, ts := range tmpl.Steps {
-		// Substitute variables in the raw JSON config
-		configStr := string(ts.Config)
-		for k, v := range merged {
-			configStr = strings.ReplaceAll(configStr, "{{"+k+"}}", fmt.Sprintf("%v", v))
-		}
-
-		var config map[string]any
-		if err := json.Unmarshal([]byte(configStr), &config); err != nil {
-			return nil, fmt.Errorf("step %s: invalid config after substitution: %w", ts.ID, err)
-		}
-
-		// Merge step-level retry/on_error into config (engine reads from config)
-		if len(ts.Retry) > 0 {
-			retryStr := string(ts.Retry)
-			for k, v := range merged {
-				retryStr = strings.ReplaceAll(retryStr, "{{"+k+"}}", fmt.Sprintf("%v", v))
-			}
-			var retryVal any
-			if err := json.Unmarshal([]byte(retryStr), &retryVal); err == nil {
-				config["retry"] = retryVal
-			}
-		}
-		if ts.OnError != "" {
-			config["on_error"] = ts.OnError
-		}
-
-		// Normalize step kind aliases (e.g., "if" → "condition", "set" → "transform")
-		normalizedKind := NormalizeStepKind(ts.Kind)
-
-		// For aliased HTTP/tool shortcuts, inject implicit tool name if missing
-		if ts.Kind != normalizedKind && normalizedKind == StepTool {
-			if _, hasTool := config["tool"]; !hasTool {
-				config["tool"] = string(ts.Kind) // e.g., "http_request"
-			}
-		}
-
-		steps = append(steps, Step{
-			ID:        ts.ID,
-			Kind:      normalizedKind,
-			Config:    config,
-			DependsOn: ts.DependsOn,
-			State:     StepPending,
-		})
+	steps, err := instantiateSteps(tmpl.Steps, merged)
+	if err != nil {
+		return nil, err
 	}
 
 	wf := NewWorkflow(workflowID, tmpl.Name, owner, steps)
 	wf.TemplateName = templateName
 	wf.Description = tmpl.Description
 
-	// Also substitute in name/description
+	// Set idempotency key from params if provided
+	if key, ok := merged["idempotency_key"].(string); ok && key != "" {
+		wf.IdempotencyKey = key
+	}
+
+	// Substitute variables in name/description
 	for k, v := range merged {
 		wf.Name = strings.ReplaceAll(wf.Name, "{{"+k+"}}", fmt.Sprintf("%v", v))
 		wf.Description = strings.ReplaceAll(wf.Description, "{{"+k+"}}", fmt.Sprintf("%v", v))
 	}
 
 	return wf, nil
+}
+
+// instantiateSteps converts template steps to workflow steps with variable substitution.
+func instantiateSteps(templateSteps []TemplateStep, merged map[string]any) ([]Step, error) {
+	steps := make([]Step, 0, len(templateSteps))
+	for _, ts := range templateSteps {
+		s, err := instantiateStep(ts, merged)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, s)
+	}
+	return steps, nil
+}
+
+// instantiateStep converts a single template step to a workflow step.
+func instantiateStep(ts TemplateStep, merged map[string]any) (Step, error) {
+	// Substitute variables in the raw JSON config
+	configStr := string(ts.Config)
+	for k, v := range merged {
+		configStr = strings.ReplaceAll(configStr, "{{"+k+"}}", fmt.Sprintf("%v", v))
+	}
+
+	var config map[string]any
+	if err := json.Unmarshal([]byte(configStr), &config); err != nil {
+		return Step{}, fmt.Errorf("step %s: invalid config after substitution: %w", ts.ID, err)
+	}
+
+	// Merge step-level retry/on_error into config (engine reads from config)
+	if len(ts.Retry) > 0 {
+		retryStr := string(ts.Retry)
+		for k, v := range merged {
+			retryStr = strings.ReplaceAll(retryStr, "{{"+k+"}}", fmt.Sprintf("%v", v))
+		}
+		var retryVal any
+		if err := json.Unmarshal([]byte(retryStr), &retryVal); err == nil {
+			config["retry"] = retryVal
+		}
+	}
+	if ts.OnError != "" {
+		config["on_error"] = ts.OnError
+	}
+
+	// Normalize step kind aliases (e.g., "if" → "condition", "set" → "transform")
+	normalizedKind := NormalizeStepKind(ts.Kind)
+
+	// For aliased HTTP/tool shortcuts, inject implicit tool name if missing
+	if ts.Kind != normalizedKind && normalizedKind == StepTool {
+		if _, hasTool := config["tool"]; !hasTool {
+			config["tool"] = string(ts.Kind)
+		}
+	}
+
+	return Step{
+		ID:        ts.ID,
+		Kind:      normalizedKind,
+		Config:    config,
+		DependsOn: ts.DependsOn,
+		State:     StepPending,
+	}, nil
 }
 
 func (ts *TemplateStore) loadAll() {

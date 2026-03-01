@@ -12,11 +12,11 @@
 
 Inspired by: Temporal (timeout hierarchy), Hatchet (exponential backoff, DEAD_LETTERED), Windmill (conditional retry).
 
-- [ ] Exponential backoff: `BackoffMultiplier` field in retry config, `min * mult^attempt` capped at `MaxDelay`
-- [ ] Per-step timeout: `timeout_ms` in step config, context deadline per RunStep
-- [ ] `StepDeadLettered` state: after exhausted retries, distinct from `StepFailed` — watchdog won't re-retry
-- [ ] Conditional retry: `retry_on` / `skip_on` string patterns in step config (extends existing `IsTransientError`)
-- [ ] `IdempotencyKey` field on Workflow: prevent duplicate runs of same template+params
+- [x] Exponential backoff: `BackoffMultiplier` field in retry config, `min * mult^attempt` capped at `MaxDelay`
+- [x] Per-step timeout: `timeout_ms` in step config, context deadline per RunStep
+- [x] `StepDeadLettered` state: after exhausted retries, distinct from `StepFailed` — watchdog won't re-retry
+- [x] Conditional retry: `retry_on` / `skip_on` string patterns in step config (extends existing `IsTransientError`)
+- [x] `IdempotencyKey` field on Workflow: prevent duplicate runs of same template+params
 
 ## v0.3.0 — Pluggable Persistence
 

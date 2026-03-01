@@ -87,6 +87,17 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		}
 	}
 
+	// Per-step timeout: step config > SecurityPolicy > none
+	stepTimeout := step.GetTimeoutMS()
+	if stepTimeout <= 0 && w.Security != nil && w.Security.MaxStepDuration > 0 {
+		stepTimeout = w.Security.MaxStepDuration.Milliseconds()
+	}
+	if stepTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(stepTimeout)*time.Millisecond)
+		defer cancel()
+	}
+
 	// Mark step running (atomic)
 	_ = e.store.Modify(workflowID, func(w *Workflow) {
 		if s := w.GetStep(stepID); s != nil {
@@ -190,21 +201,39 @@ func (e *Engine) handleApprovalRequired(workflowID, stepID string, step *Step, e
 	return nil
 }
 
-// handleStepError processes step failure: retries, skip, error-branch, or hard fail.
+// handleStepError processes step failure: retries (with backoff + conditional), skip, error-branch, dead letter, or hard fail.
 func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workflow, execErr error, endedAt int64) error {
 	maxRetries := step.GetRetryMax()
-	retryDelayMS := step.GetRetryDelayMS()
+	baseDelayMS := step.GetRetryDelayMS()
+	backoffMult := step.GetBackoffMultiplier()
+	maxDelayMS := step.GetMaxDelayMS()
+	retryOn := step.GetRetryOn()
+	skipOn := step.GetSkipOn()
+	errMsg := execErr.Error()
 
 	didRetry := false
+	var retryAttempt int
 	_ = e.store.Modify(workflowID, func(w *Workflow) {
 		s := w.GetStep(stepID)
 		if s == nil {
 			return
 		}
-		if s.Retries < maxRetries {
+
+		shouldRetry := s.Retries < maxRetries
+
+		// Conditional retry: skip_on takes precedence, then retry_on
+		if shouldRetry && len(skipOn) > 0 {
+			shouldRetry = !matchesAnyPattern(errMsg, skipOn)
+		}
+		if shouldRetry && len(retryOn) > 0 {
+			shouldRetry = matchesAnyPattern(errMsg, retryOn)
+		}
+
+		if shouldRetry {
 			s.Retries++
+			retryAttempt = s.Retries
 			s.State = StepPending
-			s.Error = fmt.Sprintf("attempt %d/%d: %s", s.Retries, maxRetries, execErr.Error())
+			s.Error = fmt.Sprintf("attempt %d/%d: %s", s.Retries, maxRetries, errMsg)
 			s.EndedAt = endedAt
 			didRetry = true
 		}
@@ -213,17 +242,23 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 
 	if didRetry {
 		GlobalMetrics.StepsRetried.Add(1)
+		delay := calculateBackoff(baseDelayMS, retryAttempt, backoffMult, maxDelayMS)
 		e.log().Info("step retrying",
 			"component", "workflow",
 			"workflow", workflowID,
 			"step", stepID,
+			"attempt", retryAttempt,
 			"max", maxRetries,
+			"delay_ms", delay,
 		)
-		time.Sleep(time.Duration(retryDelayMS) * time.Millisecond)
+		time.Sleep(time.Duration(delay) * time.Millisecond)
 		return nil
 	}
 
-	// Apply on_error routing (skip / branch / fail)
+	// Retries exhausted or conditional retry declined — check on_error routing
+	onError := step.GetOnError()
+
+	// Apply on_error routing (skip / branch / fail / dead_letter)
 	handled := false
 	_ = e.store.Modify(workflowID, func(w *Workflow) {
 		s := w.GetStep(stepID)
@@ -231,43 +266,53 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 			return
 		}
 		s.EndedAt = endedAt
-		handled = applyStepFailure(w, stepID, execErr.Error())
+
+		// If retries were configured and exhausted, and on_error == "fail" → dead letter
+		if maxRetries > 0 && s.Retries >= maxRetries && onError == OnErrorFail {
+			s.State = StepDeadLettered
+			s.Error = errMsg
+			w.State = StateFailed
+			w.Error = fmt.Sprintf("step %s dead-lettered: %s", stepID, errMsg)
+			GlobalMetrics.StepsDeadLettered.Add(1)
+			return
+		}
+
+		handled = applyStepFailure(w, stepID, errMsg)
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
 
 	if handled {
 		GlobalMetrics.StepsSkipped.Add(1)
-		onError := step.GetOnError()
 		e.log().Info("step error handled",
 			"component", "workflow",
 			"workflow", workflowID,
 			"step", stepID,
 			"on_error", onError,
-			"error", execErr.Error(),
+			"error", errMsg,
 		)
 		return nil
 	}
 
-	// Hard failure
+	// Hard failure (or dead letter)
 	GlobalMetrics.WorkflowsFailed.Add(1)
 	e.log().Error("step failed",
 		"component", "workflow",
 		"workflow", workflowID,
 		"step", stepID,
-		"error", execErr.Error(),
+		"error", errMsg,
 		"duration", endedAt-step.StartedAt,
 	)
 	e.fireHook(EventWorkflowStepFailed, map[string]any{
 		"workflow_id": workflowID,
 		"step_id":     stepID,
 		"step_kind":   string(step.Kind),
-		"error":       execErr.Error(),
+		"error":       errMsg,
 		"duration_ms": endedAt - step.StartedAt,
 	})
 	e.fireHook(EventWorkflowFailed, map[string]any{
 		"workflow_id":   workflowID,
 		"workflow_name": w.Name,
-		"error":         execErr.Error(),
+		"error":         errMsg,
 	})
 	return execErr
 }

@@ -100,6 +100,19 @@ func (s *WorkflowStore) ListByOwner(owner string) []*Workflow {
 	return result
 }
 
+// FindByIdempotencyKey returns a clone of the first non-terminal workflow with the given key, or nil.
+func (s *WorkflowStore) FindByIdempotencyKey(key string) *Workflow {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, w := range s.workflows {
+		if w.IdempotencyKey == key && !w.IsTerminal() {
+			return w.clone()
+		}
+	}
+	return nil
+}
+
 // Modify atomically loads a workflow, applies fn to it, and saves it back.
 // This is the safe way to mutate a workflow from concurrent goroutines.
 func (s *WorkflowStore) Modify(id string, fn func(w *Workflow)) error {

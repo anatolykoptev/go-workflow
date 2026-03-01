@@ -15,6 +15,7 @@ type Metrics struct {
 	StepsExecuted      atomic.Int64
 	StepsRetried       atomic.Int64
 	StepsSkipped       atomic.Int64
+	StepsDeadLettered  atomic.Int64
 	ApprovalsPending   atomic.Int64
 	AgentStepsExecuted atomic.Int64
 	AgentStepsFailed   atomic.Int64
@@ -38,6 +39,7 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Steps executed: %d", m.StepsExecuted.Load()))
 	lines = append(lines, fmt.Sprintf("  Steps retried: %d", m.StepsRetried.Load()))
 	lines = append(lines, fmt.Sprintf("  Steps skipped: %d", m.StepsSkipped.Load()))
+	lines = append(lines, fmt.Sprintf("  Steps dead-lettered: %d", m.StepsDeadLettered.Load()))
 	lines = append(lines, fmt.Sprintf("  Approvals pending: %d", m.ApprovalsPending.Load()))
 	lines = append(lines, fmt.Sprintf("  Agent steps executed: %d", m.AgentStepsExecuted.Load()))
 	lines = append(lines, fmt.Sprintf("  Agent steps failed: %d", m.AgentStepsFailed.Load()))
@@ -58,6 +60,7 @@ func (m *Metrics) Reset() {
 	m.StepsExecuted.Store(0)
 	m.StepsRetried.Store(0)
 	m.StepsSkipped.Store(0)
+	m.StepsDeadLettered.Store(0)
 	m.ApprovalsPending.Store(0)
 	m.AgentStepsExecuted.Store(0)
 	m.AgentStepsFailed.Store(0)

@@ -90,7 +90,7 @@ func (e *Engine) Advance(ctx context.Context, workflowID string) (bool, error) {
 		// Check if all steps completed → workflow completed
 		allDone := true
 		for _, s := range w.Steps {
-			if s.State != StepCompleted && s.State != StepSkipped {
+			if s.State != StepCompleted && s.State != StepSkipped && s.State != StepDeadLettered {
 				allDone = false
 				break
 			}

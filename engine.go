@@ -202,6 +202,13 @@ func (e *Engine) startWorkflow(workflowID string) (*Workflow, error) {
 		return nil, fmt.Errorf("workflow %s is %s, expected pending", workflowID, w.State)
 	}
 
+	// Idempotency check: reject if another active workflow has the same key
+	if w.IdempotencyKey != "" {
+		if existing := e.store.FindByIdempotencyKey(w.IdempotencyKey); existing != nil && existing.ID != workflowID {
+			return nil, fmt.Errorf("duplicate idempotency key %q: active workflow %s", w.IdempotencyKey, existing.ID)
+		}
+	}
+
 	if err := e.store.Modify(workflowID, func(w *Workflow) {
 		w.State = StateRunning
 		w.UpdatedAt = time.Now().UnixMilli()
@@ -218,10 +225,11 @@ func (e *Engine) startWorkflow(workflowID string) (*Workflow, error) {
 }
 
 // findAllRunnable returns IDs of all steps that are pending and have all deps completed.
+// Dead-lettered steps are treated as terminal (same as failed/skipped) for dependency resolution.
 func (e *Engine) findAllRunnable(w *Workflow) []string {
 	completed := make(map[string]bool)
 	for _, s := range w.Steps {
-		if s.State == StepCompleted || s.State == StepSkipped {
+		if s.State == StepCompleted || s.State == StepSkipped || s.State == StepDeadLettered {
 			completed[s.ID] = true
 		}
 	}
