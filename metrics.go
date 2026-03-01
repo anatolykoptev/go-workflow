@@ -23,7 +23,9 @@ type Metrics struct {
 	A2AStepsFailed     atomic.Int64
 	HooksFired         atomic.Int64
 	TriggersEvaluated  atomic.Int64
-	TriggersFired      atomic.Int64
+	TriggersFired          atomic.Int64
+	SchedulerJobsExecuted  atomic.Int64
+	SchedulerJobsFailed    atomic.Int64
 }
 
 // GlobalMetrics is the singleton metrics instance.
