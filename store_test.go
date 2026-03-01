@@ -157,6 +157,24 @@ func TestSQLiteBackend_Conformance(t *testing.T) {
 	})
 }
 
+func TestPostgresBackend_Conformance(t *testing.T) {
+	dsn := os.Getenv("WORKFLOW_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("WORKFLOW_TEST_POSTGRES_DSN not set")
+	}
+
+	runConformanceTests(t, "PostgresBackend", func(t *testing.T) *WorkflowStore {
+		t.Helper()
+		store, err := NewPostgresStore(dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Clean table between subtests
+		store.backend.(*PostgresBackend).db.MustExec("DELETE FROM workflows")
+		return store
+	})
+}
+
 func TestNewFileStore(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewFileStore(filepath.Join(dir, "wf"))
