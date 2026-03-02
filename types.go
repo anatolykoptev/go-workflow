@@ -303,7 +303,7 @@ func (w *Workflow) Clone() *Workflow {
 		cp.Steps[i].Config = deepCloneMap(s.Config)
 		cp.Steps[i].DependsOn = slices.Clone(s.DependsOn)
 	}
-	cp.Context = maps.Clone(w.Context)
+	cp.Context = deepCloneMap(w.Context)
 	cp.AllowedTools = slices.Clone(w.AllowedTools)
 	return &cp
 }

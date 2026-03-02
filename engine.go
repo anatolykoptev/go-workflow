@@ -142,6 +142,19 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		opt(e)
 	}
 
+	// Fix metrics for executors created during option application.
+	// Without this, option ordering matters: WithAgentRunner before WithMetrics
+	// would give the executor GlobalMetrics instead of the user-specified one.
+	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+		ex.metrics = e.metrics
+	}
+	if ex, ok := e.executors[StepAgent].(*AgentExecutor); ok {
+		ex.metrics = e.metrics
+	}
+	if ex, ok := e.executors[StepA2A].(*A2AExecutor); ok {
+		ex.metrics = e.metrics
+	}
+
 	e.executors[StepWorkflow] = NewSubWorkflowExecutor(e)
 	e.executors[StepForEach] = NewForEachExecutor(e)
 	e.executors[StepBranchAll] = NewBranchAllExecutor(e)
