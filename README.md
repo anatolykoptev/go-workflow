@@ -22,15 +22,18 @@ Extracted from [Vaelor](https://github.com/VaelorAI/Vaelor) for reuse in other b
 ## Quick Start
 
 ```go
-import workflow "github.com/anatolykoptev/go-workflow"
+import (
+    "github.com/anatolykoptev/go-workflow"
+    "github.com/anatolykoptev/go-workflow/store"
+)
 
 // Create a store — pick your backend
-store, _ := workflow.NewFileStore("/path/to/workflows")       // JSON files (default)
-// store, _ := workflow.NewSQLiteStore("/path/to/db.sqlite")  // SQLite
-// store, _ := workflow.NewPostgresStore("postgres://...")     // PostgreSQL
+fileStore, _ := store.NewFileStore("/path/to/workflows")       // JSON files (default)
+// fileStore, _ := store.NewSQLiteStore("/path/to/db.sqlite")  // SQLite
+// fileStore, _ := store.NewPostgresStore("postgres://...")     // PostgreSQL
 
 // Create engine with functional options
-engine := workflow.NewEngine(store,
+engine := workflow.NewEngine(fileStore,
     workflow.WithToolRunner(myToolRunner),
     workflow.WithLLMProvider(myLLMProvider),
     workflow.WithLogger(slog.Default()),
@@ -62,9 +65,9 @@ Three backends ship out of the box. All implement `StoreBackend` and are interch
 
 | Backend | Constructor | Use case |
 |---------|-------------|----------|
-| JSON files | `NewFileStore(dir)` | Development, single-process deployments |
-| SQLite | `NewSQLiteStore(path)` | Tests, single-binary deployments |
-| PostgreSQL | `NewPostgresStore(dsn)` | Production, multi-process access |
+| JSON files | `store.NewFileStore(dir)` | Development, single-process deployments |
+| SQLite | `store.NewSQLiteStore(path)` | Tests, single-binary deployments |
+| PostgreSQL | `store.NewPostgresStore(dsn)` | Production, multi-process access |
 
 See [docs/PERSISTENCE.md](docs/PERSISTENCE.md) for schema, configuration, and custom backend guide.
 

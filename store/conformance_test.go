@@ -319,6 +319,7 @@ func TestPostgresBackend_Conformance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { backend.Close() })
 		// Clean table between subtests
 		backend.CleanAll()
 		return workflow.NewWorkflowStore(backend)

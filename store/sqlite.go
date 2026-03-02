@@ -32,7 +32,7 @@ func NewSQLiteBackend(path string) (*SQLiteBackend, error) {
 
 	db.SetMaxOpenConns(1) // SQLite doesn't support concurrent writes
 
-	if err := runSQLiteMigrations(db); err != nil {
+	if err := runEmbeddedMigrations(db, sqliteMigrations, "migrate/sqlite"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate sqlite: %w", err)
 	}
@@ -207,32 +207,4 @@ func (s *SQLiteBackend) queryWorkflows(state workflow.WorkflowState, owner strin
 		result = append(result, &w)
 	}
 	return result
-}
-
-// nilIfEmpty returns nil for an empty string, otherwise the string value.
-// Used for nullable TEXT columns (e.g. idempotency_key).
-func nilIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-// runSQLiteMigrations applies embedded SQL migration files.
-func runSQLiteMigrations(db *sqlx.DB) error {
-	entries, err := sqliteMigrations.ReadDir("migrate/sqlite")
-	if err != nil {
-		return fmt.Errorf("read migrations: %w", err)
-	}
-
-	for _, entry := range entries {
-		sql, err := sqliteMigrations.ReadFile("migrate/sqlite/" + entry.Name())
-		if err != nil {
-			return fmt.Errorf("read %s: %w", entry.Name(), err)
-		}
-		if _, err := db.Exec(string(sql)); err != nil {
-			return fmt.Errorf("exec %s: %w", entry.Name(), err)
-		}
-	}
-	return nil
 }

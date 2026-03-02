@@ -32,7 +32,7 @@ func NewPostgresBackend(dsn string) (*PostgresBackend, error) {
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
-	if err := runPostgresMigrations(db); err != nil {
+	if err := runEmbeddedMigrations(db, postgresMigrations, "migrate/postgres"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate postgres: %w", err)
 	}
@@ -215,23 +215,4 @@ func (p *PostgresBackend) queryWorkflows(state workflow.WorkflowState, owner str
 		result = append(result, &w)
 	}
 	return result
-}
-
-// runPostgresMigrations applies embedded SQL migration files.
-func runPostgresMigrations(db *sqlx.DB) error {
-	entries, err := postgresMigrations.ReadDir("migrate/postgres")
-	if err != nil {
-		return fmt.Errorf("read migrations: %w", err)
-	}
-
-	for _, entry := range entries {
-		sql, err := postgresMigrations.ReadFile("migrate/postgres/" + entry.Name())
-		if err != nil {
-			return fmt.Errorf("read %s: %w", entry.Name(), err)
-		}
-		if _, err := db.Exec(string(sql)); err != nil {
-			return fmt.Errorf("exec %s: %w", entry.Name(), err)
-		}
-	}
-	return nil
 }
