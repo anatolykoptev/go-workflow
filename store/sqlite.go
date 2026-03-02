@@ -1,9 +1,11 @@
-package workflow
+package store
 
 import (
 	"embed"
 	"encoding/json"
 	"fmt"
+
+	workflow "github.com/anatolykoptev/go-workflow"
 
 	"github.com/jmoiron/sqlx"
 
@@ -39,16 +41,16 @@ func NewSQLiteBackend(path string) (*SQLiteBackend, error) {
 }
 
 // NewSQLiteStore creates a WorkflowStore backed by SQLite at the given file path.
-func NewSQLiteStore(path string) (*WorkflowStore, error) {
+func NewSQLiteStore(path string) (*workflow.WorkflowStore, error) {
 	backend, err := NewSQLiteBackend(path)
 	if err != nil {
 		return nil, err
 	}
-	return NewWorkflowStore(backend), nil
+	return workflow.NewWorkflowStore(backend), nil
 }
 
 // Save persists a workflow using INSERT ... ON CONFLICT upsert.
-func (s *SQLiteBackend) Save(w *Workflow) error {
+func (s *SQLiteBackend) Save(w *workflow.Workflow) error {
 	data, err := json.Marshal(w)
 	if err != nil {
 		return fmt.Errorf("marshal workflow: %w", err)
@@ -77,14 +79,14 @@ func (s *SQLiteBackend) Save(w *Workflow) error {
 }
 
 // Load retrieves a workflow by ID. Returns (nil, false) if not found.
-func (s *SQLiteBackend) Load(id string) (*Workflow, bool) {
+func (s *SQLiteBackend) Load(id string) (*workflow.Workflow, bool) {
 	var data string
 	err := s.db.Get(&data, "SELECT data FROM workflows WHERE id = ?", id)
 	if err != nil {
 		return nil, false
 	}
 
-	var w Workflow
+	var w workflow.Workflow
 	if err := json.Unmarshal([]byte(data), &w); err != nil {
 		return nil, false
 	}
@@ -98,27 +100,27 @@ func (s *SQLiteBackend) Delete(id string) error {
 }
 
 // List returns workflows optionally filtered by state. Empty state returns all.
-func (s *SQLiteBackend) List(state WorkflowState) []*Workflow {
+func (s *SQLiteBackend) List(state workflow.WorkflowState) []*workflow.Workflow {
 	return s.queryWorkflows(state, "")
 }
 
 // ListByOwner returns workflows owned by the given owner.
-func (s *SQLiteBackend) ListByOwner(owner string) []*Workflow {
+func (s *SQLiteBackend) ListByOwner(owner string) []*workflow.Workflow {
 	return s.queryWorkflows("", owner)
 }
 
 // FindByIdempotencyKey returns the first non-terminal workflow with the given key, or nil.
-func (s *SQLiteBackend) FindByIdempotencyKey(key string) *Workflow {
+func (s *SQLiteBackend) FindByIdempotencyKey(key string) *workflow.Workflow {
 	var data string
 	err := s.db.Get(&data,
 		"SELECT data FROM workflows WHERE idempotency_key = ? AND state NOT IN (?, ?, ?) LIMIT 1",
-		key, string(StateCompleted), string(StateFailed), string(StateCancelled),
+		key, string(workflow.StateCompleted), string(workflow.StateFailed), string(workflow.StateCancelled),
 	)
 	if err != nil {
 		return nil
 	}
 
-	var w Workflow
+	var w workflow.Workflow
 	if err := json.Unmarshal([]byte(data), &w); err != nil {
 		return nil
 	}
@@ -126,7 +128,7 @@ func (s *SQLiteBackend) FindByIdempotencyKey(key string) *Workflow {
 }
 
 // Modify atomically loads a workflow, applies fn, and saves it back within a transaction.
-func (s *SQLiteBackend) Modify(id string, fn func(w *Workflow)) error {
+func (s *SQLiteBackend) Modify(id string, fn func(w *workflow.Workflow)) error {
 	tx, err := s.db.Beginx()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -138,7 +140,7 @@ func (s *SQLiteBackend) Modify(id string, fn func(w *Workflow)) error {
 		return fmt.Errorf("workflow %s not found", id)
 	}
 
-	var w Workflow
+	var w workflow.Workflow
 	if err := json.Unmarshal([]byte(data), &w); err != nil {
 		return fmt.Errorf("unmarshal workflow %s: %w", id, err)
 	}
@@ -178,7 +180,7 @@ func (s *SQLiteBackend) Close() error {
 }
 
 // queryWorkflows builds a dynamic query with optional state and owner filters.
-func (s *SQLiteBackend) queryWorkflows(state WorkflowState, owner string) []*Workflow {
+func (s *SQLiteBackend) queryWorkflows(state workflow.WorkflowState, owner string) []*workflow.Workflow {
 	query := "SELECT data FROM workflows WHERE 1=1"
 	var args []any
 
@@ -196,9 +198,9 @@ func (s *SQLiteBackend) queryWorkflows(state WorkflowState, owner string) []*Wor
 		return nil
 	}
 
-	result := make([]*Workflow, 0, len(rows))
+	result := make([]*workflow.Workflow, 0, len(rows))
 	for _, data := range rows {
-		var w Workflow
+		var w workflow.Workflow
 		if err := json.Unmarshal([]byte(data), &w); err != nil {
 			continue
 		}

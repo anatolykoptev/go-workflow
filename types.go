@@ -294,8 +294,8 @@ func NewWorkflow(id, name, owner string, steps []Step) *Workflow {
 	}
 }
 
-// clone returns a deep copy of the workflow.
-func (w *Workflow) clone() *Workflow {
+// Clone returns a deep copy of the workflow.
+func (w *Workflow) Clone() *Workflow {
 	cp := *w
 	cp.Steps = make([]Step, len(w.Steps))
 	for i, s := range w.Steps {
