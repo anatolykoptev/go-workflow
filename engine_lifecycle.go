@@ -101,7 +101,7 @@ func (e *Engine) Advance(ctx context.Context, workflowID string) (bool, error) {
 				w.CurrentStep = ""
 				w.UpdatedAt = time.Now().UnixMilli()
 			})
-			GlobalMetrics.WorkflowsCompleted.Add(1)
+			e.getMetrics().WorkflowsCompleted.Add(1)
 			e.log().Info("workflow completed",
 				"component", "workflow",
 				"workflow", workflowID,
@@ -157,7 +157,7 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 	}
 
 	if !approved {
-		GlobalMetrics.WorkflowsCancelled.Add(1)
+		e.getMetrics().WorkflowsCancelled.Add(1)
 		err := e.store.Modify(workflowID, func(w *Workflow) {
 			w.State = StateCancelled
 			w.Error = "approval rejected"
@@ -202,7 +202,7 @@ func (e *Engine) Cancel(workflowID string) error {
 		return fmt.Errorf("workflow %s is already %s", workflowID, w.State)
 	}
 
-	GlobalMetrics.WorkflowsCancelled.Add(1)
+	e.getMetrics().WorkflowsCancelled.Add(1)
 	err = e.store.Modify(workflowID, func(w *Workflow) {
 		w.State = StateCancelled
 		w.Error = "cancelled by user"

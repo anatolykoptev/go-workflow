@@ -34,10 +34,11 @@ func (r *taskCapturingRunner) RunTask(ctx context.Context, task string, sessionK
 // --- Agent executor tests ---
 
 func TestAgentExecutor_Success(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
+	m := NewMetrics()
 
 	runner := &mockAgentRunner{result: "agent output"}
-	executor := NewAgentExecutor(runner)
+	executor := NewAgentExecutor(runner, m)
 
 	wf := NewWorkflow("wf1", "Agent", "telegram:1", nil)
 	step := &Step{ID: "s1", Kind: StepAgent, Config: map[string]any{
@@ -54,14 +55,15 @@ func TestAgentExecutor_Success(t *testing.T) {
 	if wf.Context["s1"] != "agent output" {
 		t.Errorf("context[s1] = %v, want %q", wf.Context["s1"], "agent output")
 	}
-	if GlobalMetrics.AgentStepsExecuted.Load() != 1 {
-		t.Errorf("AgentStepsExecuted = %d, want 1", GlobalMetrics.AgentStepsExecuted.Load())
+	if m.AgentStepsExecuted.Load() != 1 {
+		t.Errorf("AgentStepsExecuted = %d, want 1", m.AgentStepsExecuted.Load())
 	}
 }
 
 func TestAgentExecutor_MissingTask(t *testing.T) {
+	t.Parallel()
 	runner := &mockAgentRunner{result: "ok"}
-	executor := NewAgentExecutor(runner)
+	executor := NewAgentExecutor(runner, NewMetrics())
 
 	wf := NewWorkflow("wf1", "Agent", "telegram:1", nil)
 	step := &Step{ID: "s1", Kind: StepAgent, Config: map[string]any{}}
@@ -73,10 +75,11 @@ func TestAgentExecutor_MissingTask(t *testing.T) {
 }
 
 func TestAgentExecutor_Failure(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
+	m := NewMetrics()
 
 	runner := &mockAgentRunner{err: errors.New("agent crashed")}
-	executor := NewAgentExecutor(runner)
+	executor := NewAgentExecutor(runner, m)
 
 	wf := NewWorkflow("wf1", "Agent", "telegram:1", nil)
 	step := &Step{ID: "s1", Kind: StepAgent, Config: map[string]any{
@@ -87,18 +90,19 @@ func TestAgentExecutor_Failure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if GlobalMetrics.AgentStepsFailed.Load() != 1 {
-		t.Errorf("AgentStepsFailed = %d, want 1", GlobalMetrics.AgentStepsFailed.Load())
+	if m.AgentStepsFailed.Load() != 1 {
+		t.Errorf("AgentStepsFailed = %d, want 1", m.AgentStepsFailed.Load())
 	}
 }
 
 func TestAgentExecutor_ContextRefs(t *testing.T) {
+	t.Parallel()
 	var receivedTask string
 	runner := &mockAgentRunner{result: "ok"}
 	executor := &AgentExecutor{runner: &taskCapturingRunner{
 		inner:    runner,
 		captured: &receivedTask,
-	}}
+	}, metrics: NewMetrics()}
 
 	wf := NewWorkflow("wf1", "Agent", "telegram:1", nil)
 	wf.Context["fetch"] = "raw data here"
@@ -113,6 +117,7 @@ func TestAgentExecutor_ContextRefs(t *testing.T) {
 }
 
 func TestWorkflowWithAgentStep(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{"read_file": "file contents"}}
 	engine, store := newTestEngine(t, runner)
 
@@ -166,10 +171,11 @@ func (c *msgCapturingCaller) Call(ctx context.Context, agentID, message string) 
 // --- A2A executor tests ---
 
 func TestEngine_A2AStep(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 
 	runner := &mockToolRunner{results: map[string]string{"read_file": "file contents"}}
 	engine, store := newTestEngine(t, runner)
+	m := engine.metrics
 	engine.SetA2ACaller(&mockA2ACaller{result: "review complete"})
 
 	wf := NewWorkflow("wf1", "A2AFlow", "telegram:1", []Step{
@@ -192,14 +198,15 @@ func TestEngine_A2AStep(t *testing.T) {
 	if loaded.Context["review"] != "review complete" {
 		t.Errorf("context[review] = %v, want %q", loaded.Context["review"], "review complete")
 	}
-	if GlobalMetrics.A2AStepsExecuted.Load() != 1 {
-		t.Errorf("A2AStepsExecuted = %d, want 1", GlobalMetrics.A2AStepsExecuted.Load())
+	if m.A2AStepsExecuted.Load() != 1 {
+		t.Errorf("A2AStepsExecuted = %d, want 1", m.A2AStepsExecuted.Load())
 	}
 }
 
 func TestA2AExecutor_MissingConfig(t *testing.T) {
+	t.Parallel()
 	caller := &mockA2ACaller{result: "ok"}
-	executor := NewA2AExecutor(caller)
+	executor := NewA2AExecutor(caller, NewMetrics())
 
 	wf := NewWorkflow("wf1", "A2A", "telegram:1", nil)
 
@@ -219,10 +226,11 @@ func TestA2AExecutor_MissingConfig(t *testing.T) {
 }
 
 func TestA2AExecutor_Failure(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
+	m := NewMetrics()
 
 	caller := &mockA2ACaller{err: errors.New("connection refused")}
-	executor := NewA2AExecutor(caller)
+	executor := NewA2AExecutor(caller, m)
 
 	wf := NewWorkflow("wf1", "A2A", "telegram:1", nil)
 	step := &Step{ID: "s1", Kind: StepA2A, Config: map[string]any{
@@ -234,15 +242,16 @@ func TestA2AExecutor_Failure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if GlobalMetrics.A2AStepsFailed.Load() != 1 {
-		t.Errorf("A2AStepsFailed = %d, want 1", GlobalMetrics.A2AStepsFailed.Load())
+	if m.A2AStepsFailed.Load() != 1 {
+		t.Errorf("A2AStepsFailed = %d, want 1", m.A2AStepsFailed.Load())
 	}
 }
 
 func TestA2AExecutor_ContextRefs(t *testing.T) {
+	t.Parallel()
 	var receivedMsg string
 	caller := &mockA2ACaller{result: "ok"}
-	executor := NewA2AExecutor(&msgCapturingCaller{inner: caller, captured: &receivedMsg})
+	executor := NewA2AExecutor(&msgCapturingCaller{inner: caller, captured: &receivedMsg}, NewMetrics())
 
 	wf := NewWorkflow("wf1", "A2A", "telegram:1", nil)
 	wf.Context["diff"] = "some diff output"
@@ -285,7 +294,8 @@ func (m *realMockProvider) GetDefaultModel() string { return "test-model" }
 // --- LLM executor tests ---
 
 func TestLLMExecutor_SkillNotFound(t *testing.T) {
-	executor := NewLLMExecutor(nil)
+	t.Parallel()
+	executor := NewLLMExecutor(nil, NewMetrics())
 	executor.SetSkills(&mockSkillResolver{skills: map[string]string{}})
 
 	wf := NewWorkflow("wf1", "SkillLLM", "telegram:1", nil)
@@ -303,7 +313,8 @@ func TestLLMExecutor_SkillNotFound(t *testing.T) {
 }
 
 func TestLLMExecutor_NoSkillResolver(t *testing.T) {
-	executor := NewLLMExecutor(nil)
+	t.Parallel()
+	executor := NewLLMExecutor(nil, NewMetrics())
 
 	wf := NewWorkflow("wf1", "NoResolver", "telegram:1", nil)
 	step := &Step{ID: "s1", Kind: StepLLM, Config: map[string]any{
@@ -320,7 +331,8 @@ func TestLLMExecutor_NoSkillResolver(t *testing.T) {
 }
 
 func TestLLMExecutor_PromptFallback(t *testing.T) {
-	executor := NewLLMExecutor(nil)
+	t.Parallel()
+	executor := NewLLMExecutor(nil, NewMetrics())
 
 	wf := NewWorkflow("wf1", "NoProm", "telegram:1", nil)
 	step := &Step{ID: "s1", Kind: StepLLM, Config: map[string]any{}}
@@ -335,8 +347,9 @@ func TestLLMExecutor_PromptFallback(t *testing.T) {
 }
 
 func TestLLMExecutor_SkillRef(t *testing.T) {
+	t.Parallel()
 	provider := &realMockProvider{response: "skill output"}
-	executor := NewLLMExecutor(provider)
+	executor := NewLLMExecutor(provider, NewMetrics())
 	executor.SetSkills(&mockSkillResolver{skills: map[string]string{
 		"research": "You are a researcher. Analyze the topic thoroughly.",
 	}})
@@ -362,8 +375,9 @@ func TestLLMExecutor_SkillRef(t *testing.T) {
 }
 
 func TestLLMExecutor_SkillWithInput(t *testing.T) {
+	t.Parallel()
 	provider := &realMockProvider{response: "researched"}
-	executor := NewLLMExecutor(provider)
+	executor := NewLLMExecutor(provider, NewMetrics())
 	executor.SetSkills(&mockSkillResolver{skills: map[string]string{
 		"research": "Analyze this topic:",
 	}})
@@ -390,8 +404,9 @@ func TestLLMExecutor_SkillWithInput(t *testing.T) {
 // --- Engine setter nil-safety tests ---
 
 func TestEngine_SetAgentRunner_NilEngine(t *testing.T) {
+	t.Parallel()
 	store := newTestStore(t)
-	engine := &Engine{store: store, executors: map[StepKind]StepExecutor{}}
+	engine := &Engine{store: store, metrics: NewMetrics(), executors: map[StepKind]StepExecutor{}}
 	engine.SetAgentRunner(&mockAgentRunner{result: "ok"})
 
 	if _, ok := engine.executors[StepAgent]; !ok {
@@ -400,7 +415,8 @@ func TestEngine_SetAgentRunner_NilEngine(t *testing.T) {
 }
 
 func TestEngine_SetSkills_NoLLMExecutor(t *testing.T) {
+	t.Parallel()
 	store := newTestStore(t)
-	engine := &Engine{store: store, executors: map[StepKind]StepExecutor{}}
+	engine := &Engine{store: store, metrics: NewMetrics(), executors: map[StepKind]StepExecutor{}}
 	engine.SetSkills(&mockSkillResolver{skills: map[string]string{"x": "y"}})
 }

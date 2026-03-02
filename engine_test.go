@@ -13,6 +13,7 @@ import (
 // --- engine: linear 3-step workflow ---
 
 func TestLinearWorkflow(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{
 		"step_a": "result_a",
 		"step_b": "result_b",
@@ -50,6 +51,7 @@ func TestLinearWorkflow(t *testing.T) {
 // --- engine: DAG with parallel deps ---
 
 func TestDAGWorkflow(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -75,6 +77,7 @@ func TestDAGWorkflow(t *testing.T) {
 // --- engine: condition step ---
 
 func TestConditionStep(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{
 		"check_weather": "temperature is 5 degrees, below freezing expected",
 	}}
@@ -97,6 +100,7 @@ func TestConditionStep(t *testing.T) {
 }
 
 func TestConditionStepFalse(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{
 		"check_weather": "sunny and warm",
 	}}
@@ -121,6 +125,7 @@ func TestConditionStepFalse(t *testing.T) {
 // --- engine: approval ---
 
 func TestApprovalHalts(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -148,6 +153,7 @@ func TestApprovalHalts(t *testing.T) {
 }
 
 func TestApprovalResume(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -175,6 +181,7 @@ func TestApprovalResume(t *testing.T) {
 }
 
 func TestApprovalReject(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -195,6 +202,7 @@ func TestApprovalReject(t *testing.T) {
 // --- engine: error propagation ---
 
 func TestErrorPropagation(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("tool exploded")}
 	engine, store := newTestEngine(t, runner)
 
@@ -220,6 +228,7 @@ func TestErrorPropagation(t *testing.T) {
 // --- engine: cancel ---
 
 func TestCancel(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -240,6 +249,7 @@ func TestCancel(t *testing.T) {
 // --- context reference resolution ---
 
 func TestResolveRef(t *testing.T) {
+	t.Parallel()
 	wf := &Workflow{Context: map[string]any{
 		"check": "some result",
 	}}
@@ -261,6 +271,7 @@ func TestResolveRef(t *testing.T) {
 }
 
 func TestResolvePromptRefs(t *testing.T) {
+	t.Parallel()
 	wf := &Workflow{Context: map[string]any{
 		"weather": "sunny",
 		"temp":    25,
@@ -274,6 +285,7 @@ func TestResolvePromptRefs(t *testing.T) {
 }
 
 func TestParseOwner(t *testing.T) {
+	t.Parallel()
 	ch, id := ParseOwner("telegram:428660")
 	if ch != "telegram" || id != "428660" {
 		t.Errorf("ParseOwner = %q, %q", ch, id)
@@ -288,6 +300,7 @@ func TestParseOwner(t *testing.T) {
 // --- parallel step execution ---
 
 func TestParallelStepExecution(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -313,6 +326,7 @@ func TestParallelStepExecution(t *testing.T) {
 // --- basic retry ---
 
 func TestRetryOnFailure(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	runner := &countingToolRunner{
 		callCount: &callCount,
@@ -343,6 +357,7 @@ func TestRetryOnFailure(t *testing.T) {
 }
 
 func TestRetryExhausted(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("always fails")}
 	engine, store := newTestEngine(t, runner)
 
@@ -371,6 +386,7 @@ func TestRetryExhausted(t *testing.T) {
 // --- on_error=skip ---
 
 func TestOnErrorSkip(t *testing.T) {
+	t.Parallel()
 	engine, store := newTestEngine(t, &mockToolRunner{})
 	engine.executors[StepTool] = NewToolExecutor(&selectiveToolRunner{
 		failTools: map[string]bool{"bad": true},
@@ -401,6 +417,7 @@ func TestOnErrorSkip(t *testing.T) {
 // --- sub-workflows ---
 
 func TestSubWorkflow(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{
 		"child_tool": "child_result",
 		"parent_end": "done",
@@ -440,6 +457,7 @@ func TestSubWorkflow(t *testing.T) {
 }
 
 func TestSubWorkflowChildFailure(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("child fails")}
 	engine, store := newTestEngine(t, runner)
 	engine.executors[StepWorkflow] = NewSubWorkflowExecutor(engine)
@@ -464,6 +482,7 @@ func TestSubWorkflowChildFailure(t *testing.T) {
 // --- templates ---
 
 func TestTemplateInstantiate(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	tmpl := `{
@@ -514,6 +533,7 @@ func TestTemplateInstantiate(t *testing.T) {
 }
 
 func TestTemplateNotFound(t *testing.T) {
+	t.Parallel()
 	ts := NewTemplateStore(t.TempDir())
 	_, err := ts.Instantiate("nonexistent", "wf1", "", nil)
 	if err == nil {
@@ -522,6 +542,7 @@ func TestTemplateNotFound(t *testing.T) {
 }
 
 func TestTemplateReload(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	ts := NewTemplateStore(dir)
 
@@ -541,6 +562,7 @@ func TestTemplateReload(t *testing.T) {
 // --- AllowedTools permission scope ---
 
 func TestAllowedToolsPermitted(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -558,6 +580,7 @@ func TestAllowedToolsPermitted(t *testing.T) {
 }
 
 func TestAllowedToolsBlocked(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -578,6 +601,7 @@ func TestAllowedToolsBlocked(t *testing.T) {
 }
 
 func TestAllowedToolsEmpty(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -596,10 +620,11 @@ func TestAllowedToolsEmpty(t *testing.T) {
 // --- Metrics ---
 
 func TestMetrics(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
+	m := engine.metrics
 
 	wf := NewWorkflow("wf1", "Metrics", "telegram:1", []Step{
 		{ID: "a", Kind: StepTool, Config: map[string]any{"tool": "ta"}, State: StepPending},
@@ -607,35 +632,36 @@ func TestMetrics(t *testing.T) {
 	_ = store.Save(wf)
 	_ = engine.Start(context.Background(), "wf1")
 
-	if GlobalMetrics.WorkflowsCreated.Load() != 1 {
-		t.Errorf("created = %d, want 1", GlobalMetrics.WorkflowsCreated.Load())
+	if m.WorkflowsCreated.Load() != 1 {
+		t.Errorf("created = %d, want 1", m.WorkflowsCreated.Load())
 	}
-	if GlobalMetrics.WorkflowsCompleted.Load() != 1 {
-		t.Errorf("completed = %d, want 1", GlobalMetrics.WorkflowsCompleted.Load())
+	if m.WorkflowsCompleted.Load() != 1 {
+		t.Errorf("completed = %d, want 1", m.WorkflowsCompleted.Load())
 	}
-	if GlobalMetrics.StepsExecuted.Load() != 1 {
-		t.Errorf("steps executed = %d, want 1", GlobalMetrics.StepsExecuted.Load())
+	if m.StepsExecuted.Load() != 1 {
+		t.Errorf("steps executed = %d, want 1", m.StepsExecuted.Load())
 	}
 
-	summary := GlobalMetrics.Summary()
+	summary := m.Summary()
 	if summary == "" {
 		t.Error("summary should not be empty")
 	}
 }
 
 func TestMetricsCancel(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
+	m := engine.metrics
 
 	wf := NewWorkflow("wf1", "Cancel", "telegram:1", nil)
 	wf.State = StateRunning
 	_ = store.Save(wf)
 	_ = engine.Cancel("wf1")
 
-	if GlobalMetrics.WorkflowsCancelled.Load() != 1 {
-		t.Errorf("cancelled = %d, want 1", GlobalMetrics.WorkflowsCancelled.Load())
+	if m.WorkflowsCancelled.Load() != 1 {
+		t.Errorf("cancelled = %d, want 1", m.WorkflowsCancelled.Load())
 	}
 }
 

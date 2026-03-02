@@ -294,8 +294,8 @@ func NewWorkflow(id, name, owner string, steps []Step) *Workflow {
 	}
 }
 
-// clone returns a deep copy of the workflow.
-func (w *Workflow) clone() *Workflow {
+// Clone returns a deep copy of the workflow.
+func (w *Workflow) Clone() *Workflow {
 	cp := *w
 	cp.Steps = make([]Step, len(w.Steps))
 	for i, s := range w.Steps {
@@ -303,7 +303,7 @@ func (w *Workflow) clone() *Workflow {
 		cp.Steps[i].Config = deepCloneMap(s.Config)
 		cp.Steps[i].DependsOn = slices.Clone(s.DependsOn)
 	}
-	cp.Context = maps.Clone(w.Context)
+	cp.Context = deepCloneMap(w.Context)
 	cp.AllowedTools = slices.Clone(w.AllowedTools)
 	return &cp
 }

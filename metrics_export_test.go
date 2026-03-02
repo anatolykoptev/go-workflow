@@ -8,14 +8,14 @@ import (
 )
 
 func TestPrometheusHandler(t *testing.T) {
-	// Not parallel: mutates GlobalMetrics shared state.
-	GlobalMetrics.Reset()
-	GlobalMetrics.WorkflowsCreated.Add(5)
-	GlobalMetrics.StepsExecuted.Add(10)
-	GlobalMetrics.LLMTokensInput.Add(1000)
-	GlobalMetrics.LLMTokensOutput.Add(500)
+	t.Parallel()
+	m := NewMetrics()
+	m.WorkflowsCreated.Add(5)
+	m.StepsExecuted.Add(10)
+	m.LLMTokensInput.Add(1000)
+	m.LLMTokensOutput.Add(500)
 
-	handler := PrometheusHandler()
+	handler := PrometheusHandler(m)
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

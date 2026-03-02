@@ -6,11 +6,12 @@ import (
 )
 
 func TestMetrics_Summary(t *testing.T) {
-	GlobalMetrics.Reset()
-	GlobalMetrics.AgentStepsExecuted.Store(5)
-	GlobalMetrics.HooksFired.Store(12)
+	t.Parallel()
+	m := NewMetrics()
+	m.AgentStepsExecuted.Store(5)
+	m.HooksFired.Store(12)
 
-	summary := GlobalMetrics.Summary()
+	summary := m.Summary()
 	if !strings.Contains(summary, "Agent steps executed: 5") {
 		t.Errorf("summary missing agent steps: %s", summary)
 	}
@@ -20,18 +21,20 @@ func TestMetrics_Summary(t *testing.T) {
 }
 
 func TestMetrics_Reset(t *testing.T) {
-	GlobalMetrics.AgentStepsExecuted.Store(10)
-	GlobalMetrics.AgentStepsFailed.Store(3)
-	GlobalMetrics.HooksFired.Store(7)
-	GlobalMetrics.Reset()
+	t.Parallel()
+	m := NewMetrics()
+	m.AgentStepsExecuted.Store(10)
+	m.AgentStepsFailed.Store(3)
+	m.HooksFired.Store(7)
+	m.Reset()
 
-	if GlobalMetrics.AgentStepsExecuted.Load() != 0 {
+	if m.AgentStepsExecuted.Load() != 0 {
 		t.Error("AgentStepsExecuted not reset")
 	}
-	if GlobalMetrics.AgentStepsFailed.Load() != 0 {
+	if m.AgentStepsFailed.Load() != 0 {
 		t.Error("AgentStepsFailed not reset")
 	}
-	if GlobalMetrics.HooksFired.Load() != 0 {
+	if m.HooksFired.Load() != 0 {
 		t.Error("HooksFired not reset")
 	}
 }

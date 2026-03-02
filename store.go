@@ -26,18 +26,9 @@ func NewWorkflowStore(backend StoreBackend) *WorkflowStore {
 	return &WorkflowStore{backend: backend}
 }
 
-// NewFileStore creates a WorkflowStore backed by JSON files in the given directory.
-func NewFileStore(dir string) (*WorkflowStore, error) {
-	fb, err := NewFileBackend(dir)
-	if err != nil {
-		return nil, err
-	}
-	return NewWorkflowStore(fb), nil
-}
-
 // Save persists a deep copy of the workflow to the backend.
 func (s *WorkflowStore) Save(w *Workflow) error {
-	return s.backend.Save(w.clone())
+	return s.backend.Save(w.Clone())
 }
 
 // Load returns a deep copy of the workflow with the given ID.
@@ -46,7 +37,7 @@ func (s *WorkflowStore) Load(id string) (*Workflow, bool) {
 	if !ok {
 		return nil, false
 	}
-	return w.clone(), true
+	return w.Clone(), true
 }
 
 // Delete removes a workflow from the backend.
@@ -59,7 +50,7 @@ func (s *WorkflowStore) List(state WorkflowState) []*Workflow {
 	results := s.backend.List(state)
 	cloned := make([]*Workflow, len(results))
 	for i, w := range results {
-		cloned[i] = w.clone()
+		cloned[i] = w.Clone()
 	}
 	return cloned
 }
@@ -69,7 +60,7 @@ func (s *WorkflowStore) ListByOwner(owner string) []*Workflow {
 	results := s.backend.ListByOwner(owner)
 	cloned := make([]*Workflow, len(results))
 	for i, w := range results {
-		cloned[i] = w.clone()
+		cloned[i] = w.Clone()
 	}
 	return cloned
 }
@@ -80,7 +71,7 @@ func (s *WorkflowStore) FindByIdempotencyKey(key string) *Workflow {
 	if w == nil {
 		return nil
 	}
-	return w.clone()
+	return w.Clone()
 }
 
 // Modify atomically loads a workflow, applies fn, and saves it back.
