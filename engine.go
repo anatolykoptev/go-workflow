@@ -31,6 +31,7 @@ type Engine struct {
 	watchdogStop       chan struct{}
 	scheduler          *Scheduler
 	triggers           *TriggerService
+	eventLog           *EventLog
 }
 
 // EngineOption configures an Engine.
@@ -111,6 +112,11 @@ func WithTriggers(ts *TriggerService) EngineOption {
 	return func(e *Engine) { e.triggers = ts }
 }
 
+// WithEventLog sets the event log for structured execution tracing.
+func WithEventLog(el *EventLog) EngineOption {
+	return func(e *Engine) { e.eventLog = el }
+}
+
 // NewEngine creates a workflow engine with functional options.
 // Only store is required. All other dependencies are optional.
 func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
@@ -128,8 +134,11 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		opt(e)
 	}
 
-	// Sub-workflow executor always points back to this engine
 	e.executors[StepWorkflow] = NewSubWorkflowExecutor(e)
+	e.executors[StepForEach] = NewForEachExecutor(e)
+	e.executors[StepBranchAll] = NewBranchAllExecutor(e)
+	e.executors[StepSuspend] = NewSuspendExecutor()
+	e.executors[StepNoop] = &NoopExecutor{}
 
 	return e
 }
@@ -201,6 +210,57 @@ func (e *Engine) fireHook(event string, data map[string]any) {
 		GlobalMetrics.HooksFired.Add(1)
 	}
 }
+
+// emitEvent writes an event to the event log if configured. Nil-safe.
+func (e *Engine) emitEvent(ev Event) {
+	if e.eventLog != nil {
+		_ = e.eventLog.Append(ev)
+	}
+}
+
+// InjectStepsAndRewriteDeps atomically adds child steps after a parent step and rewrites dependencies.
+// If newDepID is not empty, any step depending on afterStepID will be updated to depend on newDepID instead.
+// Used by ForEach/BranchAll to expand meta-steps and ensure downstream steps wait for children.
+func (e *Engine) InjectStepsAndRewriteDeps(workflowID string, steps []Step, afterStepID, newDepID string) error {
+	return e.store.Modify(workflowID, func(w *Workflow) {
+		w.Steps = insertSteps(w.Steps, steps, afterStepID)
+		if newDepID != "" {
+			rewriteDependencies(w.Steps, afterStepID, newDepID)
+		}
+		w.UpdatedAt = now()
+	})
+}
+
+func insertSteps(existing []Step, newSteps []Step, afterID string) []Step {
+	insertIdx := -1
+	for i := range existing {
+		if existing[i].ID == afterID {
+			insertIdx = i + 1
+			break
+		}
+	}
+	if insertIdx < 0 {
+		insertIdx = len(existing)
+	}
+
+	result := make([]Step, 0, len(existing)+len(newSteps))
+	result = append(result, existing[:insertIdx]...)
+	result = append(result, newSteps...)
+	result = append(result, existing[insertIdx:]...)
+	return result
+}
+
+func rewriteDependencies(steps []Step, oldDep, newDep string) {
+	for i := range steps {
+		for j, dep := range steps[i].DependsOn {
+			if dep == oldDep {
+				steps[i].DependsOn[j] = newDep
+			}
+		}
+	}
+}
+
+func now() int64 { return time.Now().UnixMilli() }
 
 // startWorkflow transitions a pending workflow to running state.
 // Shared by Start and StartAsync to avoid duplication.

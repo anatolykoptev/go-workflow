@@ -119,6 +119,10 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		"step_id":     stepID,
 		"step_kind":   string(step.Kind),
 	})
+	e.emitEvent(Event{
+		Type: EventStepStarted, WorkflowID: workflowID,
+		StepID: stepID, StepKind: string(step.Kind),
+	})
 
 	// Execute (on snapshot — executor writes to step.Result and wf.Context)
 	execErr := executor.Execute(ctx, step, w)
@@ -132,6 +136,10 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 
 	if errors.Is(execErr, errApprovalRequired) {
 		return e.handleApprovalRequired(workflowID, stepID, step, endedAt)
+	}
+
+	if errors.Is(execErr, errSuspendRequested) {
+		return e.handleSuspend(workflowID, stepID, step, stepContext, endedAt)
 	}
 
 	if execErr != nil {
@@ -165,7 +173,35 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		"step_kind":   string(step.Kind),
 		"duration_ms": endedAt - step.StartedAt,
 	})
+	e.emitEvent(Event{
+		Type: EventStepFinished, WorkflowID: workflowID,
+		StepID: stepID, StepKind: string(step.Kind),
+		DurationMS: endedAt - step.StartedAt,
+	})
 
+	return nil
+}
+
+// handleSuspend pauses the workflow until a deadline. The watchdog resumes it.
+func (e *Engine) handleSuspend(workflowID, stepID string, step *Step, stepContext map[string]any, endedAt int64) error {
+	_ = e.store.Modify(workflowID, func(w *Workflow) {
+		if s := w.GetStep(stepID); s != nil {
+			s.State = StepCompleted
+			s.Result = step.Result
+			s.EndedAt = endedAt
+		}
+		for k, v := range stepContext {
+			w.Context[k] = v
+		}
+		w.StepsExecuted++
+		w.State = StatePaused
+		w.UpdatedAt = time.Now().UnixMilli()
+	})
+	e.log().Info("workflow suspended",
+		"component", "workflow",
+		"workflow", workflowID,
+		"step", stepID,
+	)
 	return nil
 }
 
@@ -308,6 +344,11 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 		"step_kind":   string(step.Kind),
 		"error":       errMsg,
 		"duration_ms": endedAt - step.StartedAt,
+	})
+	e.emitEvent(Event{
+		Type: EventStepFailed, WorkflowID: workflowID,
+		StepID: stepID, StepKind: string(step.Kind),
+		DurationMS: endedAt - step.StartedAt, Error: errMsg,
 	})
 	e.fireHook(EventWorkflowFailed, map[string]any{
 		"workflow_id":   workflowID,

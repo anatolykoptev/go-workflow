@@ -253,6 +253,14 @@ func (e *ApprovalExecutor) Execute(_ context.Context, step *Step, wf *Workflow) 
 // errApprovalRequired is a sentinel error used by ApprovalExecutor to signal the engine.
 var errApprovalRequired = errors.New("approval required")
 
+// NoopExecutor completes immediately with 'ok' result. Useful as a join step.
+type NoopExecutor struct{}
+
+func (e *NoopExecutor) Execute(_ context.Context, step *Step, _ *Workflow) error {
+	step.Result = "ok"
+	return nil
+}
+
 // SubWorkflowExecutor runs another workflow as a child step.
 // Config: {"workflow_id": "child-id"}
 // The child workflow must already exist in the store. The parent step

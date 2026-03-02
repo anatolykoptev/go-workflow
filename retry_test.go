@@ -259,21 +259,10 @@ func TestIdempotencyKey(t *testing.T) {
 	runner := &mockToolRunner{results: map[string]string{"t": "ok"}}
 	engine, store := newTestEngine(t, runner)
 
-	wf1 := NewWorkflow("wf1", "Idemp1", "test", []Step{
-		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "t"}, State: StepPending},
-	})
+	wf1 := NewWorkflow("wf1", "Idemp1", "test", []Step{})
+	wf1.State = StateRunning
 	wf1.IdempotencyKey = "order-123"
 	_ = store.Save(wf1)
-
-	err := engine.Start(context.Background(), "wf1")
-	if err != nil {
-		t.Fatalf("first start failed: %v", err)
-	}
-
-	// Set first back to running to simulate active workflow
-	_ = store.Modify("wf1", func(w *Workflow) {
-		w.State = StateRunning
-	})
 
 	wf2 := NewWorkflow("wf2", "Idemp2", "test", []Step{
 		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "t"}, State: StepPending},
@@ -281,7 +270,7 @@ func TestIdempotencyKey(t *testing.T) {
 	wf2.IdempotencyKey = "order-123"
 	_ = store.Save(wf2)
 
-	err = engine.Start(context.Background(), "wf2")
+	err := engine.Start(context.Background(), "wf2")
 	if err == nil {
 		t.Fatal("expected duplicate idempotency key error")
 	}

@@ -232,6 +232,9 @@ func (e *Engine) StartWatchdog(interval time.Duration) {
 						"count", retried,
 					)
 				}
+
+				// 3. Auto-resume suspended workflows past deadline
+				e.resumeSuspended()
 			}
 		}
 	}()
@@ -244,5 +247,39 @@ func (e *Engine) StopWatchdog() {
 	}
 	if e.scheduler != nil {
 		e.scheduler.Stop()
+	}
+}
+
+// resumeSuspended finds paused workflows with expired suspend deadlines and resumes them.
+func (e *Engine) resumeSuspended() {
+	paused := e.store.List(StatePaused)
+	nowMS := time.Now().UnixMilli()
+
+	for _, w := range paused {
+		var deadline int64
+		for k, v := range w.Context {
+			if strings.HasSuffix(k, "_suspend_until_ms") {
+				if d, ok := v.(float64); ok && int64(d) > 0 {
+					deadline = int64(d)
+					break
+				}
+				if d, ok := v.(int64); ok && d > 0 {
+					deadline = d
+					break
+				}
+			}
+		}
+
+		if deadline > 0 && nowMS >= deadline {
+			_ = e.store.Modify(w.ID, func(w *Workflow) {
+				w.State = StateRunning
+				w.UpdatedAt = nowMS
+			})
+			e.log().Info("watchdog resumed suspended workflow",
+				"component", "workflow",
+				"workflow", w.ID,
+			)
+			e.ResumeAsync(context.Background(), w.ID)
+		}
 	}
 }

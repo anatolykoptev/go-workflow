@@ -47,6 +47,10 @@ const (
 	StepAgent     StepKind = "agent"
 	StepTransform StepKind = "transform"
 	StepA2A       StepKind = "a2a"
+	StepForEach   StepKind = "foreach"
+	StepBranchAll StepKind = "branchall"
+	StepSuspend   StepKind = "suspend"
+	StepNoop      StepKind = "noop"
 )
 
 // OnError strategy constants for step error handling.
@@ -113,7 +117,7 @@ func NormalizeStepKind(kind StepKind) StepKind {
 // IsValidStepKind returns true if the kind is a known canonical or alias step kind.
 func IsValidStepKind(kind StepKind) bool {
 	switch kind {
-	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A:
+	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A, StepForEach, StepBranchAll, StepSuspend, StepNoop:
 		return true
 	}
 	_, isAlias := stepKindAliases[kind]

@@ -42,21 +42,21 @@ Inspired by: Hatchet (TriggeredByCron/ByEvent), Inngest (waitForEvent with match
 
 Inspired by: Temporal (visibility), Rivet (trace viewer), OTEL GenAI conventions.
 
-- [ ] OpenTelemetry tracing: span per step with `gen_ai.*` attributes for LLM steps
-- [ ] Token/cost tracking: input_tokens, output_tokens, model per LLM step execution
-- [ ] Prometheus metrics exporter (WorkflowsCreated, StepsExecuted, LLMTokensUsed, etc.)
-- [ ] Structured event log: append-only JSONL per workflow (inputs, outputs, timing, errors)
-- [ ] Execution replay: load event log → reconstruct full execution trace
+- [x] OpenTelemetry tracing: span per step with `gen_ai.*` attributes for LLM steps
+- [x] Token/cost tracking: input_tokens, output_tokens, model per LLM step execution
+- [x] Prometheus metrics exporter (WorkflowsCreated, StepsExecuted, LLMTokensUsed, etc.)
+- [x] Structured event log: append-only JSONL per workflow (inputs, outputs, timing, errors)
+- [x] Execution replay: load event log → reconstruct full execution trace
 
 ## v0.6.0 — Advanced DAG
 
 Inspired by: Windmill (branchall, forloopflow), Dify (Iteration node), Argo (withParam fan-out).
 
-- [ ] `StepForEach`: iterate over list, execute sub-steps per item (parallel or sequential)
-- [ ] `StepBranchAll`: explicit fan-out — run N branches in parallel, collect all results
-- [ ] Dynamic step generation: step output → new steps added at runtime
-- [ ] Per-step concurrency limit: max N parallel instances of a ForEach step
-- [ ] `suspend_until_ms`: timed pause — watchdog auto-resumes after deadline
+- [x] `StepForEach`: iterate over list, execute sub-steps per item (parallel or sequential)
+- [x] `StepBranchAll`: explicit fan-out — run N branches in parallel, collect all results
+- [x] Dynamic step generation: step output → new steps added at runtime
+- [x] Per-step concurrency limit: max N parallel instances of a ForEach step
+- [x] `suspend_until_ms`: timed pause — watchdog auto-resumes after deadline
 
 ## v0.7.0 — AI Enhancements
 
