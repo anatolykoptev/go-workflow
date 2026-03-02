@@ -28,10 +28,11 @@ func (r *hookRecorder) getEvents() []string {
 }
 
 func TestWorkflowHooks_StartComplete(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 
 	runner := &mockToolRunner{results: map[string]string{"echo": "ok"}}
 	engine, store := newTestEngine(t, runner)
+	m := engine.metrics
 
 	recorder := &hookRecorder{}
 	engine.SetHooks(recorder)
@@ -53,12 +54,13 @@ func TestWorkflowHooks_StartComplete(t *testing.T) {
 		}
 	}
 
-	if GlobalMetrics.HooksFired.Load() != int64(len(expected)) {
-		t.Errorf("HooksFired = %d, want %d", GlobalMetrics.HooksFired.Load(), len(expected))
+	if m.HooksFired.Load() != int64(len(expected)) {
+		t.Errorf("HooksFired = %d, want %d", m.HooksFired.Load(), len(expected))
 	}
 }
 
 func TestWorkflowHooks_StepFailed(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("boom")}
 	engine, store := newTestEngine(t, runner)
 
@@ -91,6 +93,7 @@ func TestWorkflowHooks_StepFailed(t *testing.T) {
 }
 
 func TestWorkflowHooks_Cancelled(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -109,6 +112,7 @@ func TestWorkflowHooks_Cancelled(t *testing.T) {
 }
 
 func TestWorkflowHooks_NilSafe(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{"echo": "ok"}}
 	engine, store := newTestEngine(t, runner)
 

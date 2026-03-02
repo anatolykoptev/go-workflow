@@ -36,7 +36,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 			w.Error = budgetErr.Error()
 			w.UpdatedAt = time.Now().UnixMilli()
 		})
-		GlobalMetrics.WorkflowsFailed.Add(1)
+		e.getMetrics().WorkflowsFailed.Add(1)
 		return budgetErr
 	}
 
@@ -50,7 +50,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 				w.Error = timeoutErr.Error()
 				w.UpdatedAt = time.Now().UnixMilli()
 			})
-			GlobalMetrics.WorkflowsFailed.Add(1)
+			e.getMetrics().WorkflowsFailed.Add(1)
 			return timeoutErr
 		}
 	}
@@ -82,7 +82,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 				w.Error = fmt.Sprintf("step %s failed: %s", stepID, permErr.Error())
 				w.UpdatedAt = time.Now().UnixMilli()
 			})
-			GlobalMetrics.WorkflowsFailed.Add(1)
+			e.getMetrics().WorkflowsFailed.Add(1)
 			return permErr
 		}
 	}
@@ -128,7 +128,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 	execErr := executor.Execute(ctx, step, w)
 	endedAt := time.Now().UnixMilli()
 
-	GlobalMetrics.StepsExecuted.Add(1)
+	e.getMetrics().StepsExecuted.Add(1)
 
 	// Capture executor results to merge back atomically
 	stepResult := step.Result
@@ -215,7 +215,7 @@ func (e *Engine) handleApprovalRequired(workflowID, stepID string, step *Step, e
 		w.State = StateWaitingApproval
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
-	GlobalMetrics.ApprovalsPending.Add(1)
+	e.getMetrics().ApprovalsPending.Add(1)
 	e.log().Info("waiting for approval",
 		"component", "workflow",
 		"workflow", workflowID,
@@ -277,7 +277,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 	})
 
 	if didRetry {
-		GlobalMetrics.StepsRetried.Add(1)
+		e.getMetrics().StepsRetried.Add(1)
 		delay := calculateBackoff(baseDelayMS, retryAttempt, backoffMult, maxDelayMS)
 		e.log().Info("step retrying",
 			"component", "workflow",
@@ -309,7 +309,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 			s.Error = errMsg
 			w.State = StateFailed
 			w.Error = fmt.Sprintf("step %s dead-lettered: %s", stepID, errMsg)
-			GlobalMetrics.StepsDeadLettered.Add(1)
+			e.getMetrics().StepsDeadLettered.Add(1)
 			return
 		}
 
@@ -318,7 +318,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 	})
 
 	if handled {
-		GlobalMetrics.StepsSkipped.Add(1)
+		e.getMetrics().StepsSkipped.Add(1)
 		e.log().Info("step error handled",
 			"component", "workflow",
 			"workflow", workflowID,
@@ -330,7 +330,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 	}
 
 	// Hard failure (or dead letter)
-	GlobalMetrics.WorkflowsFailed.Add(1)
+	e.getMetrics().WorkflowsFailed.Add(1)
 	e.log().Error("step failed",
 		"component", "workflow",
 		"workflow", workflowID,

@@ -30,8 +30,13 @@ type Metrics struct {
 	LLMTokensOutput        atomic.Int64
 }
 
-// GlobalMetrics is the singleton metrics instance.
-var GlobalMetrics = &Metrics{}
+// NewMetrics creates a fresh Metrics instance for dependency injection.
+func NewMetrics() *Metrics {
+	return &Metrics{}
+}
+
+// Deprecated: GlobalMetrics is a package-level singleton. Use NewMetrics() + WithMetrics() instead.
+var GlobalMetrics = NewMetrics()
 
 // Summary returns a formatted string of all metrics.
 func (m *Metrics) Summary() string {

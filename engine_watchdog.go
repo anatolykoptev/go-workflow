@@ -162,7 +162,7 @@ func (e *Engine) AutoRetryFailed(maxAge time.Duration) int {
 			continue
 		}
 
-		GlobalMetrics.StepsRetried.Add(1)
+		e.getMetrics().StepsRetried.Add(1)
 		e.log().Info("auto-retrying transient failure",
 			"component", "workflow",
 			"workflow", wf.ID,
@@ -221,7 +221,7 @@ func (e *Engine) StartWatchdog(interval time.Duration) {
 						"component", "workflow",
 						"count", recovered,
 					)
-					GlobalMetrics.HooksFired.Add(1) // reuse counter for watchdog actions
+					e.getMetrics().HooksFired.Add(1) // reuse counter for watchdog actions
 				}
 
 				// 2. Auto-retry transient failures (within last 30 min)

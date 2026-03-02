@@ -14,11 +14,12 @@ type A2ACaller interface {
 
 // A2AExecutor delegates a step to a remote A2A agent.
 type A2AExecutor struct {
-	caller A2ACaller
+	caller  A2ACaller
+	metrics *Metrics
 }
 
-func NewA2AExecutor(caller A2ACaller) *A2AExecutor {
-	return &A2AExecutor{caller: caller}
+func NewA2AExecutor(caller A2ACaller, metrics *Metrics) *A2AExecutor {
+	return &A2AExecutor{caller: caller, metrics: metrics}
 }
 
 func (e *A2AExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) error {
@@ -43,11 +44,11 @@ func (e *A2AExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) err
 
 	result, err := e.caller.Call(ctx, agentID, message)
 	if err != nil {
-		GlobalMetrics.A2AStepsFailed.Add(1)
+		e.metrics.A2AStepsFailed.Add(1)
 		return fmt.Errorf("a2a %s: %w", agentID, err)
 	}
 
-	GlobalMetrics.A2AStepsExecuted.Add(1)
+	e.metrics.A2AStepsExecuted.Add(1)
 	step.Result = result
 	wf.Context[step.ID] = result
 	return nil

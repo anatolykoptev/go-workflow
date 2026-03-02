@@ -22,6 +22,7 @@ type HookPublisher interface {
 // Engine orchestrates workflow execution: DAG resolution, step dispatch, persistence.
 type Engine struct {
 	store              *WorkflowStore
+	metrics            *Metrics
 	executors          map[StepKind]StepExecutor
 	bus                MessagePublisher
 	approvalNotifier   ApprovalNotifier
@@ -36,6 +37,12 @@ type Engine struct {
 
 // EngineOption configures an Engine.
 type EngineOption func(*Engine)
+
+// WithMetrics sets the metrics instance for the engine.
+// If not set, defaults to GlobalMetrics for backward compatibility.
+func WithMetrics(m *Metrics) EngineOption {
+	return func(e *Engine) { e.metrics = m }
+}
 
 // WithLogger sets the structured logger for the engine.
 func WithLogger(l *slog.Logger) EngineOption {
@@ -58,7 +65,7 @@ func WithMessagePublisher(m MessagePublisher) EngineOption {
 // WithLLMProvider sets the LLM provider for LLM steps.
 func WithLLMProvider(p LLMProvider) EngineOption {
 	return func(e *Engine) {
-		e.executors[StepLLM] = NewLLMExecutor(p)
+		e.executors[StepLLM] = NewLLMExecutor(p, e.metrics)
 	}
 }
 
@@ -72,14 +79,14 @@ func WithToolRunner(t ToolRunner) EngineOption {
 // WithAgentRunner sets the agent runner for agent steps.
 func WithAgentRunner(a AgentRunner) EngineOption {
 	return func(e *Engine) {
-		e.executors[StepAgent] = NewAgentExecutor(a)
+		e.executors[StepAgent] = NewAgentExecutor(a, e.metrics)
 	}
 }
 
 // WithA2ACaller sets the A2A caller for A2A steps.
 func WithA2ACaller(c A2ACaller) EngineOption {
 	return func(e *Engine) {
-		e.executors[StepA2A] = NewA2AExecutor(c)
+		e.executors[StepA2A] = NewA2AExecutor(c, e.metrics)
 	}
 }
 
@@ -121,8 +128,9 @@ func WithEventLog(el *EventLog) EngineOption {
 // Only store is required. All other dependencies are optional.
 func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	e := &Engine{
-		store:  store,
-		logger: slog.Default(),
+		store:   store,
+		metrics: GlobalMetrics,
+		logger:  slog.Default(),
 		executors: map[StepKind]StepExecutor{
 			StepCondition: NewConditionExecutor(),
 			StepApproval:  NewApprovalExecutor(),
@@ -151,7 +159,7 @@ func (e *Engine) SetApprovalNotifier(fn ApprovalNotifier) {
 // SetAgentRunner registers an AgentExecutor for StepAgent steps.
 // Called after engine creation to avoid circular dependency with agent package.
 func (e *Engine) SetAgentRunner(runner AgentRunner) {
-	e.executors[StepAgent] = NewAgentExecutor(runner)
+	e.executors[StepAgent] = NewAgentExecutor(runner, e.getMetrics())
 }
 
 // SetSkills sets the skill resolver for LLM steps that reference skills by name.
@@ -164,7 +172,7 @@ func (e *Engine) SetSkills(sr SkillResolver) {
 // SetA2ACaller registers an A2AExecutor for StepA2A steps.
 // Called after engine creation to avoid circular dependency with a2a package.
 func (e *Engine) SetA2ACaller(caller A2ACaller) {
-	e.executors[StepA2A] = NewA2AExecutor(caller)
+	e.executors[StepA2A] = NewA2AExecutor(caller, e.getMetrics())
 }
 
 // SetHooks sets the hook publisher for workflow lifecycle events.
@@ -175,6 +183,15 @@ func (e *Engine) SetHooks(h HookPublisher) {
 // SetCompletionNotifier sets the callback for workflow completion reports.
 func (e *Engine) SetCompletionNotifier(fn CompletionNotifier) {
 	e.completionNotifier = fn
+}
+
+// getMetrics returns the engine's metrics, falling back to GlobalMetrics if nil.
+// This makes metrics safe when Engine is constructed as a struct literal in tests.
+func (e *Engine) getMetrics() *Metrics {
+	if e.metrics != nil {
+		return e.metrics
+	}
+	return GlobalMetrics
 }
 
 // log returns the engine's logger, falling back to slog.Default() if nil.
@@ -207,7 +224,7 @@ func (e *Engine) notifyCompletion(workflowID string) {
 func (e *Engine) fireHook(event string, data map[string]any) {
 	if e.hooks != nil {
 		e.hooks.Fire(event, data)
-		GlobalMetrics.HooksFired.Add(1)
+		e.getMetrics().HooksFired.Add(1)
 	}
 }
 
@@ -288,7 +305,7 @@ func (e *Engine) startWorkflow(workflowID string) (*Workflow, error) {
 		return nil, err
 	}
 
-	GlobalMetrics.WorkflowsCreated.Add(1)
+	e.getMetrics().WorkflowsCreated.Add(1)
 	e.fireHook(EventWorkflowStarted, map[string]any{
 		"workflow_id":   workflowID,
 		"workflow_name": w.Name,

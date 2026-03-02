@@ -15,10 +15,11 @@ type SkillResolver interface {
 type LLMExecutor struct {
 	provider LLMProvider
 	skills   SkillResolver
+	metrics  *Metrics
 }
 
-func NewLLMExecutor(provider LLMProvider) *LLMExecutor {
-	return &LLMExecutor{provider: provider}
+func NewLLMExecutor(provider LLMProvider, metrics *Metrics) *LLMExecutor {
+	return &LLMExecutor{provider: provider, metrics: metrics}
 }
 
 // SetSkills sets the skill resolver for skill-aware LLM steps. Nil-safe.
@@ -74,8 +75,8 @@ func (e *LLMExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) err
 			"output_tokens": resp.OutputTokens,
 			"model":         resp.Model,
 		}
-		GlobalMetrics.LLMTokensInput.Add(int64(resp.InputTokens))
-		GlobalMetrics.LLMTokensOutput.Add(int64(resp.OutputTokens))
+		e.metrics.LLMTokensInput.Add(int64(resp.InputTokens))
+		e.metrics.LLMTokensOutput.Add(int64(resp.OutputTokens))
 	}
 	return nil
 }

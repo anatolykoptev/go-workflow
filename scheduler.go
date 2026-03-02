@@ -71,6 +71,7 @@ type Scheduler struct {
 	store     *jobStore
 	onJob     JobHandler
 	logger    *slog.Logger
+	metrics   *Metrics
 	mu        sync.RWMutex
 	running   bool
 	stopChan  chan struct{}
@@ -81,6 +82,7 @@ func NewScheduler(storePath string, handler JobHandler, opts ...SchedulerOption)
 	s := &Scheduler{
 		storePath: storePath,
 		onJob:     handler,
+		metrics:   GlobalMetrics,
 		stopChan:  make(chan struct{}),
 	}
 	for _, opt := range opts {
@@ -96,6 +98,11 @@ type SchedulerOption func(*Scheduler)
 // WithSchedulerLogger sets the logger for the scheduler.
 func WithSchedulerLogger(l *slog.Logger) SchedulerOption {
 	return func(s *Scheduler) { s.logger = l }
+}
+
+// WithSchedulerMetrics sets the metrics instance for the scheduler.
+func WithSchedulerMetrics(m *Metrics) SchedulerOption {
+	return func(s *Scheduler) { s.metrics = m }
 }
 
 func (s *Scheduler) log() *slog.Logger {
@@ -199,7 +206,7 @@ func (s *Scheduler) executeJobByID(id string) {
 		return
 	}
 
-	GlobalMetrics.SchedulerJobsExecuted.Add(1)
+	s.metrics.SchedulerJobsExecuted.Add(1)
 	startTime := time.Now().UnixMilli()
 
 	var err error
@@ -222,7 +229,7 @@ func (s *Scheduler) executeJobByID(id string) {
 		if err != nil {
 			job.State.LastStatus = "error"
 			job.State.LastError = err.Error()
-			GlobalMetrics.SchedulerJobsFailed.Add(1)
+			s.metrics.SchedulerJobsFailed.Add(1)
 		} else {
 			job.State.LastStatus = "ok"
 			job.State.LastError = ""

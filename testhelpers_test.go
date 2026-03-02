@@ -153,11 +153,12 @@ func newTestStore(t *testing.T) *WorkflowStore {
 func newTestEngine(t *testing.T, runner ToolRunner) (*Engine, *WorkflowStore) {
 	t.Helper()
 	store := newTestStore(t)
+	m := NewMetrics()
 	executors := map[StepKind]StepExecutor{
 		StepTool:      NewToolExecutor(runner),
 		StepCondition: NewConditionExecutor(),
 		StepApproval:  NewApprovalExecutor(),
 	}
-	engine := &Engine{store: store, executors: executors}
+	engine := &Engine{store: store, metrics: m, executors: executors}
 	return engine, store
 }
