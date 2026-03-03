@@ -62,11 +62,11 @@ Inspired by: Windmill (branchall, forloopflow), Dify (Iteration node), Argo (wit
 
 Inspired by: LangGraph (state reducers, interrupt), Conductor (LLM task types), CrewAI (role-based agents).
 
-- [ ] State reducers: per-context-key merge semantics (append, replace, sum) instead of last-write-wins
-- [ ] Typed variable passing: `{"$ref": "step_id.field.subfield"}` path-selector for step inputs
-- [ ] LLM streaming: token-by-token callback from LLMProvider to caller
-- [ ] LLM tool calling in workflow: LLM step can invoke tools, multi-turn within single step
-- [ ] `interrupt_before/after`: declarative HITL — pause before/after named steps without code change
+- [x] State reducers: per-context-key merge semantics (append, replace, sum) instead of last-write-wins
+- [x] Typed variable passing: `{"$ref": "step_id.field.subfield"}` path-selector for step inputs
+- [x] LLM streaming: token-by-token callback from LLMProvider to caller
+- [x] LLM tool calling in workflow: LLM step can invoke tools, multi-turn within single step
+- [x] `interrupt_before/after`: declarative HITL — pause before/after named steps without code change
 
 ## v0.8.0 — Distributed Execution
 
