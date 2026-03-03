@@ -8,6 +8,8 @@ import (
 	"github.com/anatolykoptev/go-kit/llm"
 )
 
+const defaultMaxTurns = 10
+
 // executeToolLoop runs the multi-turn tool calling loop.
 // Stores final content in wf.Context[step.ID] and tool call log in wf.Context[step.ID+"_tool_calls"].
 func (e *LLMExecutor) executeToolLoop(
@@ -43,7 +45,7 @@ func (e *LLMExecutor) executeToolLoop(
 
 		// Execute each tool call and log results
 		for _, tc := range resp.ToolCalls {
-			result, toolErr := e.executeTool(ctx, tc)
+			result, toolErr := e.executeTool(ctx, tc, wf)
 			if toolErr != nil {
 				result = fmt.Sprintf("error: %s", toolErr)
 			}
@@ -61,11 +63,19 @@ func (e *LLMExecutor) executeToolLoop(
 		}
 	}
 
+	if len(toolLog) > 0 {
+		wf.Context[step.ID+"_tool_calls"] = toolLog
+	}
 	return fmt.Errorf("step %s: max_turns (%d) exceeded", step.ID, maxTurns)
 }
 
-// executeTool parses arguments and delegates to the tool runner.
-func (e *LLMExecutor) executeTool(ctx context.Context, tc llm.ToolCall) (string, error) {
+// executeTool checks security policy, parses arguments, and delegates to the tool runner.
+func (e *LLMExecutor) executeTool(ctx context.Context, tc llm.ToolCall, wf *Workflow) (string, error) {
+	// Enforce security policy for LLM-driven tool calls
+	if wf.Security != nil && !wf.Security.IsToolAllowed(tc.Function.Name) {
+		return "", fmt.Errorf("tool %q not permitted by security policy", tc.Function.Name)
+	}
+
 	var args map[string]any
 	if tc.Function.Arguments != "" {
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
@@ -101,7 +111,7 @@ func (e *LLMExecutor) parseTools(cfg map[string]any) []llm.Tool {
 func (e *LLMExecutor) parseMaxTurns(cfg map[string]any) int {
 	v, _ := cfg["max_turns"].(float64)
 	if v <= 0 {
-		return 10
+		return defaultMaxTurns
 	}
 	return int(v)
 }
