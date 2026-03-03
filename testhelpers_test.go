@@ -160,6 +160,7 @@ func newTestEngine(t *testing.T, runner ToolRunner) (*Engine, *WorkflowStore) {
 		StepApproval:  NewApprovalExecutor(),
 	}
 	engine := &Engine{store: store, metrics: m, executors: executors}
+	engine.dispatcher = NewLocalDispatcher(engine)
 	return engine, store
 }
 

@@ -90,10 +90,17 @@ func (e *Engine) Advance(ctx context.Context, workflowID string) (bool, error) {
 		return false, nil
 	}
 
+	d := e.getDispatcher()
 	if len(runnableSteps) == 1 {
-		return true, e.RunStep(ctx, workflowID, runnableSteps[0])
+		step := w.GetStep(runnableSteps[0])
+		return true, d.Dispatch(ctx, workflowID, runnableSteps[0], step.Kind)
 	}
-	return true, e.runParallel(ctx, workflowID, runnableSteps)
+
+	kinds := make([]StepKind, len(runnableSteps))
+	for i, sid := range runnableSteps {
+		kinds[i] = w.GetStep(sid).Kind
+	}
+	return true, d.DispatchBatch(ctx, workflowID, runnableSteps, kinds)
 }
 
 // tryMarkCompleted checks if all steps are terminal and marks the workflow completed.

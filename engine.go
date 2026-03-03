@@ -22,6 +22,7 @@ type Engine struct {
 	store              *WorkflowStore
 	metrics            *Metrics
 	executors          map[StepKind]StepExecutor
+	dispatcher         StepDispatcher
 	bus                MessagePublisher
 	approvalNotifier   ApprovalNotifier
 	completionNotifier CompletionNotifier
@@ -168,6 +169,11 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	e.executors[StepBranchAll] = NewBranchAllExecutor(e)
 	e.executors[StepSuspend] = NewSuspendExecutor()
 	e.executors[StepNoop] = &NoopExecutor{}
+
+	// Default to in-process dispatch if no dispatcher was provided via options.
+	if e.dispatcher == nil {
+		e.dispatcher = NewLocalDispatcher(e)
+	}
 
 	return e
 }
