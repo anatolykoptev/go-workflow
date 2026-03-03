@@ -70,19 +70,42 @@ Inspired by: LangGraph (state reducers, interrupt), Conductor (LLM task types), 
 - [x] MCP tool runner: call tools on remote MCP servers (go-wp, go-search, go-code, etc.) via ToolRunner interface
 - [x] Multi-runner routing: combine local and MCP tool runners with name-based dispatch
 
-## v0.8.0 — Distributed Execution
+## v0.8.0 — Distributed Execution (done)
 
 Inspired by: Hatchet (Postgres queue + gRPC workers), Temporal (task queues), Restate (virtual objects).
 
-- [x] Worker interface: steps dispatched to remote workers via queue
-- [x] Postgres SKIP LOCKED as work queue (no Redis/Kafka dependency)
-- [x] Heartbeat protocol: workers report progress, engine detects dead workers
-- [x] Concurrency control per entity key (Inngest pattern): `limit: N, key: "owner"`
-- [x] Graceful shutdown: PauseAll → drain workers → StopWatchdog
+- [x] `StepDispatcher` interface: `LocalDispatcher` (in-process, default) + `PostgresDispatcher` (queue-based)
+- [x] Postgres SKIP LOCKED as work queue: `StepQueue` with Enqueue/Dequeue/Complete/Fail
+- [x] `WorkerNode`: dequeue-execute-heartbeat loop with configurable step kinds
+- [x] Heartbeat protocol: periodic heartbeats, `Reaper` reclaims stale items from dead workers
+- [x] `ConcurrencyLimiter`: per step kind and per entity key limits
+- [x] `StepListener`: PostgreSQL LISTEN/NOTIFY for near-zero latency result delivery
+- [x] Graceful shutdown: `DrainAndStop` waits for current step, then stops worker
+- [x] 100% backward compatible: default `LocalDispatcher` preserves in-process execution
+
+## v0.9.0 — Workflow Versioning & Migration
+
+Inspired by: Temporal (getVersion/patching), Cadence (versioned decisions), Conductor (workflow versioning).
+
+- [ ] Workflow schema version: `Version` field on Workflow and Template
+- [ ] Version registry: register multiple versions of a template, route by version
+- [ ] Migration functions: `Migrate(oldVersion, newVersion, fn)` for in-flight workflows
+- [ ] Backward-compatible replay: event log replays respect version at time of execution
+- [ ] Deprecation policy: mark old versions as deprecated, block new starts
+
+## v1.0.0 — Stable API & Web UI
+
+Inspired by: Temporal Web, Windmill (visual editor), Rivet (node graph UI).
+
+- [ ] API stability guarantee: no breaking changes to core interfaces
+- [ ] Visual DAG editor: React + WebSocket for live execution view
+- [ ] Execution timeline: step-by-step replay with inputs/outputs/timing
+- [ ] REST/gRPC API: start/pause/cancel/inspect workflows remotely
+- [ ] Comprehensive documentation: godoc, tutorials, migration guide
 
 ## Future
-- [ ] Visual DAG editor (web UI) — React + WebSocket for live execution view
-- [ ] Workflow versioning & migration (Temporal getVersion pattern)
 - [ ] Graph with cycles for agent loops (LangGraph Pregel model)
+- [ ] gRPC worker protocol: alternative to Postgres queue for high-throughput
 - [ ] Open Flow specification compatibility (Windmill standard)
 - [ ] RL-trained step routing (Conductor RL pattern)
+- [ ] Multi-region execution: geo-aware step routing
