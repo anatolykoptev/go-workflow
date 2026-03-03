@@ -27,6 +27,7 @@ type Engine struct {
 	approvalNotifier   ApprovalNotifier
 	completionNotifier CompletionNotifier
 	hooks              HookPublisher
+	listener           *StepListener
 	logger             *slog.Logger
 	watchdogStop       chan struct{}
 	scheduler          *Scheduler
@@ -127,6 +128,10 @@ func WithTriggers(ts *TriggerService) EngineOption {
 
 func WithEventLog(el *EventLog) EngineOption {
 	return func(e *Engine) { e.eventLog = el }
+}
+
+func WithStepListener(l *StepListener) EngineOption {
+	return func(e *Engine) { e.listener = l }
 }
 
 // NewEngine creates a workflow engine with functional options.
