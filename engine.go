@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/anatolykoptev/go-kit/llm"
 )
 
 // ApprovalNotifier is called when a workflow needs user approval.
@@ -66,6 +68,22 @@ func WithMessagePublisher(m MessagePublisher) EngineOption {
 func WithLLMProvider(p LLMProvider) EngineOption {
 	return func(e *Engine) {
 		e.executors[StepLLM] = NewLLMExecutor(p, e.metrics)
+	}
+}
+
+// WithLLMClient sets the go-kit LLM client for LLM steps.
+func WithLLMClient(c *llm.Client) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepLLM] = NewLLMExecutorWithClient(c, e.metrics)
+	}
+}
+
+// WithStreamCallback sets the callback for LLM streaming chunks.
+func WithStreamCallback(cb StreamCallback) EngineOption {
+	return func(e *Engine) {
+		if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+			ex.SetStreamCallback(cb)
+		}
 	}
 }
 

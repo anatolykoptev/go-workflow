@@ -186,6 +186,12 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 			}
 		}
 
+		// Clear interrupt for the current step so it doesn't re-trigger
+		if w.CurrentStep != "" {
+			w.InterruptBefore = removeString(w.InterruptBefore, w.CurrentStep)
+			w.InterruptAfter = removeString(w.InterruptAfter, w.CurrentStep)
+		}
+
 		w.State = StateRunning
 		w.UpdatedAt = time.Now().UnixMilli()
 	})

@@ -139,8 +139,10 @@ type Workflow struct {
 	AllowedTools  []string        `json:"allowed_tools,omitempty"` // restrict tool steps to these tools; empty = all allowed
 	Security      *SecurityPolicy `json:"security,omitempty"`      // execution limits and constraints
 	Error         string          `json:"error,omitempty"`
-	StepsExecuted int                    `json:"steps_executed,omitempty"` // total steps executed (including retries)
-	Reducers      map[string]ReducerKind `json:"reducers,omitempty"`       // per-key context merge strategy
+	StepsExecuted   int                    `json:"steps_executed,omitempty"`   // total steps executed (including retries)
+	Reducers        map[string]ReducerKind `json:"reducers,omitempty"`        // per-key context merge strategy
+	InterruptBefore []string               `json:"interrupt_before,omitempty"` // pause before these step IDs
+	InterruptAfter  []string               `json:"interrupt_after,omitempty"`  // pause after these step IDs
 	CreatedAt     int64                  `json:"created_at_ms"`
 	UpdatedAt     int64           `json:"updated_at_ms"`
 }
@@ -267,6 +269,20 @@ func calculateBackoff(baseMS int64, attempt int, multiplier float64, maxMS int64
 		d = maxMS
 	}
 	return d
+}
+
+// removeString returns a new slice with all occurrences of val removed.
+func removeString(ss []string, val string) []string {
+	out := ss[:0:0] // nil if ss is nil
+	for _, s := range ss {
+		if s != val {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // matchesAnyPattern returns true if msg contains any pattern (case-insensitive substring).

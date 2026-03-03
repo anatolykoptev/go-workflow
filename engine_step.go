@@ -108,6 +108,30 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
 
+	// interrupt_before: pause workflow before executing this step
+	if slices.Contains(w.InterruptBefore, stepID) {
+		_ = e.store.Modify(workflowID, func(w *Workflow) {
+			if s := w.GetStep(stepID); s != nil {
+				s.State = StepPending // reset back to pending
+				s.StartedAt = 0
+			}
+			w.State = StateWaitingApproval
+			w.UpdatedAt = time.Now().UnixMilli()
+		})
+		e.getMetrics().ApprovalsPending.Add(1)
+		e.log().Info("interrupt_before",
+			"component", "workflow",
+			"workflow", workflowID,
+			"step", stepID,
+		)
+		e.fireHook(EventWorkflowApprovalNeeded, map[string]any{
+			"workflow_id": workflowID,
+			"step_id":     stepID,
+			"reason":      "interrupt_before",
+		})
+		return nil
+	}
+
 	e.log().Info("step started",
 		"component", "workflow",
 		"workflow", workflowID,
@@ -157,6 +181,26 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		w.StepsExecuted++
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
+
+	// interrupt_after: pause workflow after completing this step
+	if slices.Contains(w.InterruptAfter, stepID) {
+		_ = e.store.Modify(workflowID, func(w *Workflow) {
+			w.State = StateWaitingApproval
+			w.UpdatedAt = time.Now().UnixMilli()
+		})
+		e.getMetrics().ApprovalsPending.Add(1)
+		e.log().Info("interrupt_after",
+			"component", "workflow",
+			"workflow", workflowID,
+			"step", stepID,
+		)
+		e.fireHook(EventWorkflowApprovalNeeded, map[string]any{
+			"workflow_id": workflowID,
+			"step_id":     stepID,
+			"reason":      "interrupt_after",
+		})
+		return nil
+	}
 
 	e.log().Info("step completed",
 		"component", "workflow",
