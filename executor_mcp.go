@@ -115,7 +115,12 @@ func (r *MCPToolRunner) resolveServer(ctx context.Context, name string) (string,
 		return serverID, nil
 	}
 
-	// Tool not found — try discovering all servers.
+	// Tool not found — connect all servers and rediscover.
+	for id := range r.servers {
+		if _, err := r.getSession(ctx, id); err != nil {
+			slog.Warn("mcp lazy connect failed", slog.String("server", id), slog.Any("error", err))
+		}
+	}
 	if err := r.discover(ctx); err != nil {
 		return "", err
 	}
