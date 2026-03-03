@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// GracefulShutdown pauses all workflows and stops the watchdog.
+func (e *Engine) GracefulShutdown(timeout time.Duration) int {
+	paused := e.PauseAll()
+	e.StopWatchdog()
+
+	return paused
+}
+
 // PauseAll pauses all running workflows. Used for graceful shutdown.
 func (e *Engine) PauseAll() int {
 	running := e.store.List(StateRunning)
