@@ -109,6 +109,50 @@ All external dependencies are injected via interfaces:
 - `HookPublisher` — fire lifecycle events
 - `SkillResolver` — load skill prompts by name
 
+## Distributed Execution (v0.8.0)
+
+Steps can be executed on remote workers via a PostgreSQL-based queue.
+
+### Local mode (default -- zero config change)
+
+```go
+engine := workflow.NewEngine(store)
+// Steps execute in-process via LocalDispatcher, same as before
+```
+
+### Distributed mode
+
+```go
+// On the coordinator:
+queue, _ := store.NewStepQueue(dsn)
+dispatcher := workflow.NewPostgresDispatcher(queue)
+listener, _ := workflow.NewStepListener(dsn)
+
+engine := workflow.NewEngine(store,
+    workflow.WithDispatcher(dispatcher),
+    workflow.WithStepListener(listener),
+)
+go engine.ListenForResults(ctx, listener)
+
+// On worker nodes:
+worker, _ := workflow.NewWorkerNode(workflow.WorkerConfig{
+    ID:        "worker-1",
+    Queue:     queue,
+    StepKinds: []string{"llm", "tool", "agent"},
+    Engine:    workerEngine,
+})
+worker.Run(ctx)
+```
+
+### Features
+
+- **SKIP LOCKED queue**: PostgreSQL-native work distribution, no Redis/Kafka needed
+- **Heartbeat protocol**: Workers send periodic heartbeats; stale items auto-reclaimed via `ReapStale`
+- **Concurrency control**: Per step kind and per entity key limits via `ConcurrencyLimiter`
+- **LISTEN/NOTIFY**: Near-zero latency result delivery via PostgreSQL notifications
+- **Graceful shutdown**: `DrainAndStop` waits for current step, then stops the worker
+- **100% backward compatible**: Default `LocalDispatcher` preserves in-process execution
+
 ## License
 
 MIT

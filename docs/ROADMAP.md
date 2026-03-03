@@ -74,11 +74,11 @@ Inspired by: LangGraph (state reducers, interrupt), Conductor (LLM task types), 
 
 Inspired by: Hatchet (Postgres queue + gRPC workers), Temporal (task queues), Restate (virtual objects).
 
-- [ ] Worker interface: steps dispatched to remote workers via queue
-- [ ] Postgres SKIP LOCKED as work queue (no Redis/Kafka dependency)
-- [ ] Heartbeat protocol: workers report progress, engine detects dead workers
-- [ ] Concurrency control per entity key (Inngest pattern): `limit: N, key: "owner"`
-- [ ] Graceful shutdown: PauseAll → drain workers → StopWatchdog
+- [x] Worker interface: steps dispatched to remote workers via queue
+- [x] Postgres SKIP LOCKED as work queue (no Redis/Kafka dependency)
+- [x] Heartbeat protocol: workers report progress, engine detects dead workers
+- [x] Concurrency control per entity key (Inngest pattern): `limit: N, key: "owner"`
+- [x] Graceful shutdown: PauseAll → drain workers → StopWatchdog
 
 ## Future
 - [ ] Visual DAG editor (web UI) — React + WebSocket for live execution view
