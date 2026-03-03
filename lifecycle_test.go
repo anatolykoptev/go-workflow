@@ -9,7 +9,7 @@ import (
 )
 
 func TestStartAsync_NonBlocking(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{"echo": "hello"}}
 	engine, store := newTestEngine(t, runner)
 
@@ -47,7 +47,7 @@ func TestStartAsync_NonBlocking(t *testing.T) {
 }
 
 func TestStartAsync_FailureNotifies(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("boom")}
 	engine, store := newTestEngine(t, runner)
 
@@ -72,7 +72,7 @@ func TestStartAsync_FailureNotifies(t *testing.T) {
 }
 
 func TestCancel_Notifies(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -95,6 +95,7 @@ func TestCancel_Notifies(t *testing.T) {
 }
 
 func TestPauseAll(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -132,6 +133,7 @@ func TestPauseAll(t *testing.T) {
 }
 
 func TestRecoverAll(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{"echo": "ok"}}
 	engine, store := newTestEngine(t, runner)
 

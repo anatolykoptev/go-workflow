@@ -53,12 +53,13 @@ type TriggerService struct {
 	store     *triggerStore
 	executor  TriggerExecutor
 	logger    *slog.Logger
+	metrics   *Metrics
 	mu        sync.RWMutex
 }
 
 // NewTriggerService creates a trigger service backed by the given file path.
 func NewTriggerService(storePath string, opts ...TriggerOption) *TriggerService {
-	ts := &TriggerService{storePath: storePath}
+	ts := &TriggerService{storePath: storePath, metrics: GlobalMetrics}
 	for _, opt := range opts {
 		opt(ts)
 	}
@@ -72,6 +73,11 @@ type TriggerOption func(*TriggerService)
 // WithTriggerLogger sets the logger for the trigger service.
 func WithTriggerLogger(l *slog.Logger) TriggerOption {
 	return func(ts *TriggerService) { ts.logger = l }
+}
+
+// WithTriggerMetrics sets the metrics instance for the trigger service.
+func WithTriggerMetrics(m *Metrics) TriggerOption {
+	return func(ts *TriggerService) { ts.metrics = m }
 }
 
 func (ts *TriggerService) log() *slog.Logger {
@@ -142,7 +148,7 @@ func (ts *TriggerService) Evaluate(event string, data map[string]any) []EventTri
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
-	GlobalMetrics.TriggersEvaluated.Add(1)
+	ts.metrics.TriggersEvaluated.Add(1)
 
 	var matched []EventTrigger
 	for _, t := range ts.store.Triggers {
@@ -155,7 +161,7 @@ func (ts *TriggerService) Evaluate(event string, data map[string]any) []EventTri
 	}
 
 	if len(matched) > 0 {
-		GlobalMetrics.TriggersFired.Add(int64(len(matched)))
+		ts.metrics.TriggersFired.Add(int64(len(matched)))
 	}
 	return matched
 }

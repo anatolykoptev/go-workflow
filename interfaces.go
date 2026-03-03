@@ -14,6 +14,11 @@ const (
 	EventWorkflowApprovalNeeded = "workflow_approval_needed"
 )
 
+// StepExecutor runs a single step within a workflow.
+type StepExecutor interface {
+	Execute(ctx context.Context, step *Step, wf *Workflow) error
+}
+
 // MessagePublisher delivers messages to users (replaces *bus.MessageBus).
 type MessagePublisher interface {
 	PublishOutbound(msg OutboundMessage)

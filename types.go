@@ -47,6 +47,10 @@ const (
 	StepAgent     StepKind = "agent"
 	StepTransform StepKind = "transform"
 	StepA2A       StepKind = "a2a"
+	StepForEach   StepKind = "foreach"
+	StepBranchAll StepKind = "branchall"
+	StepSuspend   StepKind = "suspend"
+	StepNoop      StepKind = "noop"
 )
 
 // OnError strategy constants for step error handling.
@@ -113,7 +117,7 @@ func NormalizeStepKind(kind StepKind) StepKind {
 // IsValidStepKind returns true if the kind is a known canonical or alias step kind.
 func IsValidStepKind(kind StepKind) bool {
 	switch kind {
-	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A:
+	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A, StepForEach, StepBranchAll, StepSuspend, StepNoop:
 		return true
 	}
 	_, isAlias := stepKindAliases[kind]
@@ -135,8 +139,11 @@ type Workflow struct {
 	AllowedTools  []string        `json:"allowed_tools,omitempty"` // restrict tool steps to these tools; empty = all allowed
 	Security      *SecurityPolicy `json:"security,omitempty"`      // execution limits and constraints
 	Error         string          `json:"error,omitempty"`
-	StepsExecuted int             `json:"steps_executed,omitempty"` // total steps executed (including retries)
-	CreatedAt     int64           `json:"created_at_ms"`
+	StepsExecuted   int                    `json:"steps_executed,omitempty"`   // total steps executed (including retries)
+	Reducers        map[string]ReducerKind `json:"reducers,omitempty"`        // per-key context merge strategy
+	InterruptBefore []string               `json:"interrupt_before,omitempty"` // pause before these step IDs
+	InterruptAfter  []string               `json:"interrupt_after,omitempty"`  // pause after these step IDs
+	CreatedAt     int64                  `json:"created_at_ms"`
 	UpdatedAt     int64           `json:"updated_at_ms"`
 }
 
@@ -264,6 +271,20 @@ func calculateBackoff(baseMS int64, attempt int, multiplier float64, maxMS int64
 	return d
 }
 
+// removeString returns a new slice with all occurrences of val removed.
+func removeString(ss []string, val string) []string {
+	out := ss[:0:0] // nil if ss is nil
+	for _, s := range ss {
+		if s != val {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // matchesAnyPattern returns true if msg contains any pattern (case-insensitive substring).
 func matchesAnyPattern(msg string, patterns []string) bool {
 	lower := strings.ToLower(msg)
@@ -290,8 +311,8 @@ func NewWorkflow(id, name, owner string, steps []Step) *Workflow {
 	}
 }
 
-// clone returns a deep copy of the workflow.
-func (w *Workflow) clone() *Workflow {
+// Clone returns a deep copy of the workflow.
+func (w *Workflow) Clone() *Workflow {
 	cp := *w
 	cp.Steps = make([]Step, len(w.Steps))
 	for i, s := range w.Steps {
@@ -299,7 +320,7 @@ func (w *Workflow) clone() *Workflow {
 		cp.Steps[i].Config = deepCloneMap(s.Config)
 		cp.Steps[i].DependsOn = slices.Clone(s.DependsOn)
 	}
-	cp.Context = maps.Clone(w.Context)
+	cp.Context = deepCloneMap(w.Context)
 	cp.AllowedTools = slices.Clone(w.AllowedTools)
 	return &cp
 }

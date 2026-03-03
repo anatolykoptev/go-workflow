@@ -6,13 +6,11 @@ import (
 	"strings"
 )
 
-// PrometheusHandler returns an http.Handler that renders GlobalMetrics
+// PrometheusHandler returns an http.Handler that renders the given Metrics
 // in Prometheus text exposition format. No external dependency required.
-func PrometheusHandler() http.Handler {
+func PrometheusHandler(m *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-
-		m := GlobalMetrics
 		var b strings.Builder
 
 		gauge := func(name, help string, val int64) {

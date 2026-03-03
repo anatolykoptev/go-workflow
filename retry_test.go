@@ -11,6 +11,7 @@ import (
 // --- Exponential backoff ---
 
 func TestExponentialBackoff(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("transient error")}
 	engine, store := newTestEngine(t, runner)
 
@@ -43,6 +44,7 @@ func TestExponentialBackoff(t *testing.T) {
 }
 
 func TestBackoffCapped(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("fail")}
 	engine, store := newTestEngine(t, runner)
 
@@ -103,12 +105,13 @@ func TestCalculateBackoff(t *testing.T) {
 // --- Per-step timeout ---
 
 func TestPerStepTimeout(t *testing.T) {
+	t.Parallel()
 	runner := &slowToolRunner{delay: 500 * time.Millisecond}
 	store := newTestStore(t)
 	executors := map[StepKind]StepExecutor{
 		StepTool: NewToolExecutor(runner),
 	}
-	engine := &Engine{store: store, executors: executors}
+	engine := &Engine{store: store, metrics: NewMetrics(), executors: executors}
 
 	wf := NewWorkflow("wf1", "Timeout", "test", []Step{
 		{ID: "s1", Kind: StepTool, Config: map[string]any{
@@ -128,12 +131,13 @@ func TestPerStepTimeout(t *testing.T) {
 }
 
 func TestPerStepTimeoutFromPolicy(t *testing.T) {
+	t.Parallel()
 	runner := &slowToolRunner{delay: 500 * time.Millisecond}
 	store := newTestStore(t)
 	executors := map[StepKind]StepExecutor{
 		StepTool: NewToolExecutor(runner),
 	}
-	engine := &Engine{store: store, executors: executors}
+	engine := &Engine{store: store, metrics: NewMetrics(), executors: executors}
 
 	wf := NewWorkflow("wf1", "PolicyTimeout", "test", []Step{
 		{ID: "s1", Kind: StepTool, Config: map[string]any{
@@ -152,9 +156,10 @@ func TestPerStepTimeoutFromPolicy(t *testing.T) {
 // --- Dead letter ---
 
 func TestStepDeadLettered(t *testing.T) {
-	GlobalMetrics.Reset()
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("permanent failure")}
 	engine, store := newTestEngine(t, runner)
+	m := engine.metrics
 
 	wf := NewWorkflow("wf1", "DeadLetter", "test", []Step{
 		{ID: "s1", Kind: StepTool, Config: map[string]any{
@@ -179,12 +184,13 @@ func TestStepDeadLettered(t *testing.T) {
 	if !strings.Contains(loaded.Error, "dead-lettered") {
 		t.Errorf("workflow error = %q, want 'dead-lettered'", loaded.Error)
 	}
-	if GlobalMetrics.StepsDeadLettered.Load() != 1 {
-		t.Errorf("StepsDeadLettered = %d, want 1", GlobalMetrics.StepsDeadLettered.Load())
+	if m.StepsDeadLettered.Load() != 1 {
+		t.Errorf("StepsDeadLettered = %d, want 1", m.StepsDeadLettered.Load())
 	}
 }
 
 func TestDeadLetteredNotAutoRetried(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
@@ -206,6 +212,7 @@ func TestDeadLetteredNotAutoRetried(t *testing.T) {
 // --- Conditional retry ---
 
 func TestRetryOnPattern(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("permanent: invalid input")}
 	engine, store := newTestEngine(t, runner)
 
@@ -230,6 +237,7 @@ func TestRetryOnPattern(t *testing.T) {
 }
 
 func TestSkipOnPattern(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{err: errors.New("permanent error: do not retry")}
 	engine, store := newTestEngine(t, runner)
 
@@ -256,24 +264,14 @@ func TestSkipOnPattern(t *testing.T) {
 // --- Idempotency ---
 
 func TestIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{"t": "ok"}}
 	engine, store := newTestEngine(t, runner)
 
-	wf1 := NewWorkflow("wf1", "Idemp1", "test", []Step{
-		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "t"}, State: StepPending},
-	})
+	wf1 := NewWorkflow("wf1", "Idemp1", "test", []Step{})
+	wf1.State = StateRunning
 	wf1.IdempotencyKey = "order-123"
 	_ = store.Save(wf1)
-
-	err := engine.Start(context.Background(), "wf1")
-	if err != nil {
-		t.Fatalf("first start failed: %v", err)
-	}
-
-	// Set first back to running to simulate active workflow
-	_ = store.Modify("wf1", func(w *Workflow) {
-		w.State = StateRunning
-	})
 
 	wf2 := NewWorkflow("wf2", "Idemp2", "test", []Step{
 		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "t"}, State: StepPending},
@@ -281,7 +279,7 @@ func TestIdempotencyKey(t *testing.T) {
 	wf2.IdempotencyKey = "order-123"
 	_ = store.Save(wf2)
 
-	err = engine.Start(context.Background(), "wf2")
+	err := engine.Start(context.Background(), "wf2")
 	if err == nil {
 		t.Fatal("expected duplicate idempotency key error")
 	}
@@ -291,6 +289,7 @@ func TestIdempotencyKey(t *testing.T) {
 }
 
 func TestIdempotencyKeyAllowsTerminal(t *testing.T) {
+	t.Parallel()
 	runner := &mockToolRunner{results: map[string]string{"t": "ok"}}
 	engine, store := newTestEngine(t, runner)
 

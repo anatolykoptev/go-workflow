@@ -36,7 +36,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 			w.Error = budgetErr.Error()
 			w.UpdatedAt = time.Now().UnixMilli()
 		})
-		GlobalMetrics.WorkflowsFailed.Add(1)
+		e.getMetrics().WorkflowsFailed.Add(1)
 		return budgetErr
 	}
 
@@ -50,7 +50,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 				w.Error = timeoutErr.Error()
 				w.UpdatedAt = time.Now().UnixMilli()
 			})
-			GlobalMetrics.WorkflowsFailed.Add(1)
+			e.getMetrics().WorkflowsFailed.Add(1)
 			return timeoutErr
 		}
 	}
@@ -82,7 +82,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 				w.Error = fmt.Sprintf("step %s failed: %s", stepID, permErr.Error())
 				w.UpdatedAt = time.Now().UnixMilli()
 			})
-			GlobalMetrics.WorkflowsFailed.Add(1)
+			e.getMetrics().WorkflowsFailed.Add(1)
 			return permErr
 		}
 	}
@@ -108,6 +108,30 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
 
+	// interrupt_before: pause workflow before executing this step
+	if slices.Contains(w.InterruptBefore, stepID) {
+		_ = e.store.Modify(workflowID, func(w *Workflow) {
+			if s := w.GetStep(stepID); s != nil {
+				s.State = StepPending // reset back to pending
+				s.StartedAt = 0
+			}
+			w.State = StateWaitingApproval
+			w.UpdatedAt = time.Now().UnixMilli()
+		})
+		e.getMetrics().ApprovalsPending.Add(1)
+		e.log().Info("interrupt_before",
+			"component", "workflow",
+			"workflow", workflowID,
+			"step", stepID,
+		)
+		e.fireHook(EventWorkflowApprovalNeeded, map[string]any{
+			"workflow_id": workflowID,
+			"step_id":     stepID,
+			"reason":      "interrupt_before",
+		})
+		return nil
+	}
+
 	e.log().Info("step started",
 		"component", "workflow",
 		"workflow", workflowID,
@@ -119,12 +143,16 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		"step_id":     stepID,
 		"step_kind":   string(step.Kind),
 	})
+	e.emitEvent(Event{
+		Type: EventStepStarted, WorkflowID: workflowID,
+		StepID: stepID, StepKind: string(step.Kind),
+	})
 
 	// Execute (on snapshot — executor writes to step.Result and wf.Context)
 	execErr := executor.Execute(ctx, step, w)
 	endedAt := time.Now().UnixMilli()
 
-	GlobalMetrics.StepsExecuted.Add(1)
+	e.getMetrics().StepsExecuted.Add(1)
 
 	// Capture executor results to merge back atomically
 	stepResult := step.Result
@@ -132,6 +160,10 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 
 	if errors.Is(execErr, errApprovalRequired) {
 		return e.handleApprovalRequired(workflowID, stepID, step, endedAt)
+	}
+
+	if errors.Is(execErr, errSuspendRequested) {
+		return e.handleSuspend(workflowID, stepID, step, stepContext, endedAt)
 	}
 
 	if execErr != nil {
@@ -145,13 +177,30 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 			s.Result = stepResult
 			s.EndedAt = endedAt
 		}
-		// Merge context from executor
-		for k, v := range stepContext {
-			w.Context[k] = v
-		}
+		mergeContext(w, stepContext)
 		w.StepsExecuted++
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
+
+	// interrupt_after: pause workflow after completing this step
+	if slices.Contains(w.InterruptAfter, stepID) {
+		_ = e.store.Modify(workflowID, func(w *Workflow) {
+			w.State = StateWaitingApproval
+			w.UpdatedAt = time.Now().UnixMilli()
+		})
+		e.getMetrics().ApprovalsPending.Add(1)
+		e.log().Info("interrupt_after",
+			"component", "workflow",
+			"workflow", workflowID,
+			"step", stepID,
+		)
+		e.fireHook(EventWorkflowApprovalNeeded, map[string]any{
+			"workflow_id": workflowID,
+			"step_id":     stepID,
+			"reason":      "interrupt_after",
+		})
+		return nil
+	}
 
 	e.log().Info("step completed",
 		"component", "workflow",
@@ -165,7 +214,33 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		"step_kind":   string(step.Kind),
 		"duration_ms": endedAt - step.StartedAt,
 	})
+	e.emitEvent(Event{
+		Type: EventStepFinished, WorkflowID: workflowID,
+		StepID: stepID, StepKind: string(step.Kind),
+		DurationMS: endedAt - step.StartedAt,
+	})
 
+	return nil
+}
+
+// handleSuspend pauses the workflow until a deadline. The watchdog resumes it.
+func (e *Engine) handleSuspend(workflowID, stepID string, step *Step, stepContext map[string]any, endedAt int64) error {
+	_ = e.store.Modify(workflowID, func(w *Workflow) {
+		if s := w.GetStep(stepID); s != nil {
+			s.State = StepCompleted
+			s.Result = step.Result
+			s.EndedAt = endedAt
+		}
+		mergeContext(w, stepContext)
+		w.StepsExecuted++
+		w.State = StatePaused
+		w.UpdatedAt = time.Now().UnixMilli()
+	})
+	e.log().Info("workflow suspended",
+		"component", "workflow",
+		"workflow", workflowID,
+		"step", stepID,
+	)
 	return nil
 }
 
@@ -179,7 +254,7 @@ func (e *Engine) handleApprovalRequired(workflowID, stepID string, step *Step, e
 		w.State = StateWaitingApproval
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
-	GlobalMetrics.ApprovalsPending.Add(1)
+	e.getMetrics().ApprovalsPending.Add(1)
 	e.log().Info("waiting for approval",
 		"component", "workflow",
 		"workflow", workflowID,
@@ -241,7 +316,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 	})
 
 	if didRetry {
-		GlobalMetrics.StepsRetried.Add(1)
+		e.getMetrics().StepsRetried.Add(1)
 		delay := calculateBackoff(baseDelayMS, retryAttempt, backoffMult, maxDelayMS)
 		e.log().Info("step retrying",
 			"component", "workflow",
@@ -273,7 +348,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 			s.Error = errMsg
 			w.State = StateFailed
 			w.Error = fmt.Sprintf("step %s dead-lettered: %s", stepID, errMsg)
-			GlobalMetrics.StepsDeadLettered.Add(1)
+			e.getMetrics().StepsDeadLettered.Add(1)
 			return
 		}
 
@@ -282,7 +357,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 	})
 
 	if handled {
-		GlobalMetrics.StepsSkipped.Add(1)
+		e.getMetrics().StepsSkipped.Add(1)
 		e.log().Info("step error handled",
 			"component", "workflow",
 			"workflow", workflowID,
@@ -294,7 +369,7 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 	}
 
 	// Hard failure (or dead letter)
-	GlobalMetrics.WorkflowsFailed.Add(1)
+	e.getMetrics().WorkflowsFailed.Add(1)
 	e.log().Error("step failed",
 		"component", "workflow",
 		"workflow", workflowID,
@@ -308,6 +383,11 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 		"step_kind":   string(step.Kind),
 		"error":       errMsg,
 		"duration_ms": endedAt - step.StartedAt,
+	})
+	e.emitEvent(Event{
+		Type: EventStepFailed, WorkflowID: workflowID,
+		StepID: stepID, StepKind: string(step.Kind),
+		DurationMS: endedAt - step.StartedAt, Error: errMsg,
 	})
 	e.fireHook(EventWorkflowFailed, map[string]any{
 		"workflow_id":   workflowID,

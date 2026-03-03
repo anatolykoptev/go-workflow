@@ -1,4 +1,4 @@
-package workflow
+package store
 
 import (
 	"encoding/json"
@@ -8,13 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	workflow "github.com/anatolykoptev/go-workflow"
 )
 
 // FileBackend stores workflows as JSON files in a directory.
 // Each workflow is written to {dir}/{id}.json with atomic rename.
 type FileBackend struct {
 	dir       string
-	workflows map[string]*Workflow
+	workflows map[string]*workflow.Workflow
 	mu        sync.RWMutex
 }
 
@@ -27,7 +29,7 @@ func NewFileBackend(dir string) (*FileBackend, error) {
 
 	fb := &FileBackend{
 		dir:       dir,
-		workflows: make(map[string]*Workflow),
+		workflows: make(map[string]*workflow.Workflow),
 	}
 
 	if err := fb.loadAll(); err != nil {
@@ -37,9 +39,18 @@ func NewFileBackend(dir string) (*FileBackend, error) {
 	return fb, nil
 }
 
+// NewFileStore creates a WorkflowStore backed by JSON files in the given directory.
+func NewFileStore(dir string) (*workflow.WorkflowStore, error) {
+	fb, err := NewFileBackend(dir)
+	if err != nil {
+		return nil, err
+	}
+	return workflow.NewWorkflowStore(fb), nil
+}
+
 // Save stores the workflow in memory and writes it to disk.
 // The caller (WorkflowStore) already cloned, so FileBackend stores the pointer directly.
-func (fb *FileBackend) Save(w *Workflow) error {
+func (fb *FileBackend) Save(w *workflow.Workflow) error {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
 
@@ -48,7 +59,7 @@ func (fb *FileBackend) Save(w *Workflow) error {
 }
 
 // Load returns a clone of the workflow (safe to read without lock after return).
-func (fb *FileBackend) Load(id string) (*Workflow, bool) {
+func (fb *FileBackend) Load(id string) (*workflow.Workflow, bool) {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
 
@@ -56,7 +67,7 @@ func (fb *FileBackend) Load(id string) (*Workflow, bool) {
 	if !ok {
 		return nil, false
 	}
-	return w.clone(), true
+	return w.Clone(), true
 }
 
 // Delete removes a workflow from memory and disk.
@@ -73,48 +84,48 @@ func (fb *FileBackend) Delete(id string) error {
 }
 
 // List returns cloned workflow pointers filtered by state (empty = all).
-func (fb *FileBackend) List(state WorkflowState) []*Workflow {
+func (fb *FileBackend) List(state workflow.WorkflowState) []*workflow.Workflow {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
 
-	var result []*Workflow
+	var result []*workflow.Workflow
 	for _, w := range fb.workflows {
 		if state == "" || w.State == state {
-			result = append(result, w.clone())
+			result = append(result, w.Clone())
 		}
 	}
 	return result
 }
 
 // ListByOwner returns cloned workflow pointers owned by the given session key.
-func (fb *FileBackend) ListByOwner(owner string) []*Workflow {
+func (fb *FileBackend) ListByOwner(owner string) []*workflow.Workflow {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
 
-	var result []*Workflow
+	var result []*workflow.Workflow
 	for _, w := range fb.workflows {
 		if w.Owner == owner {
-			result = append(result, w.clone())
+			result = append(result, w.Clone())
 		}
 	}
 	return result
 }
 
 // FindByIdempotencyKey returns a clone of the first non-terminal workflow with the given key.
-func (fb *FileBackend) FindByIdempotencyKey(key string) *Workflow {
+func (fb *FileBackend) FindByIdempotencyKey(key string) *workflow.Workflow {
 	fb.mu.RLock()
 	defer fb.mu.RUnlock()
 
 	for _, w := range fb.workflows {
 		if w.IdempotencyKey == key && !w.IsTerminal() {
-			return w.clone()
+			return w.Clone()
 		}
 	}
 	return nil
 }
 
 // Modify atomically loads a workflow, applies fn, and writes it back to disk.
-func (fb *FileBackend) Modify(id string, fn func(w *Workflow)) error {
+func (fb *FileBackend) Modify(id string, fn func(w *workflow.Workflow)) error {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
 
@@ -131,7 +142,7 @@ func (fb *FileBackend) Close() error {
 	return nil
 }
 
-func (fb *FileBackend) writeToDisk(w *Workflow) error {
+func (fb *FileBackend) writeToDisk(w *workflow.Workflow) error {
 	data, err := json.MarshalIndent(w, "", "  ")
 	if err != nil {
 		return err
@@ -165,7 +176,7 @@ func (fb *FileBackend) loadAll() error {
 			continue
 		}
 
-		var w Workflow
+		var w workflow.Workflow
 		if err := json.Unmarshal(data, &w); err != nil {
 			continue
 		}
