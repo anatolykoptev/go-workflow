@@ -19,12 +19,14 @@ type StreamCallback func(workflowID, stepID, delta string)
 // LLMExecutor sends a prompt to the LLM provider and stores the response.
 // Supports both legacy LLMProvider interface and go-kit *llm.Client (preferred).
 // Supports skill references: {"skill": "name", "input": "..."}.
+// Supports multi-turn tool calling when tools are configured and a ToolRunner is set.
 type LLMExecutor struct {
-	provider LLMProvider   // legacy interface
-	client   *llm.Client   // go-kit client (preferred)
-	skills   SkillResolver
-	metrics  *Metrics
-	streamCB StreamCallback
+	provider   LLMProvider   // legacy interface
+	client     *llm.Client   // go-kit client (preferred)
+	skills     SkillResolver
+	metrics    *Metrics
+	streamCB   StreamCallback
+	toolRunner ToolRunner
 }
 
 // NewLLMExecutor creates an LLMExecutor using the legacy LLMProvider interface.
@@ -42,6 +44,9 @@ func (e *LLMExecutor) SetSkills(sr SkillResolver) { e.skills = sr }
 
 // SetStreamCallback sets the callback for streaming LLM chunks.
 func (e *LLMExecutor) SetStreamCallback(cb StreamCallback) { e.streamCB = cb }
+
+// SetToolRunner sets the tool runner for multi-turn tool calling.
+func (e *LLMExecutor) SetToolRunner(tr ToolRunner) { e.toolRunner = tr }
 
 func (e *LLMExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) error {
 	prompt, err := resolvePrompt(step, wf, e.skills)
@@ -75,9 +80,16 @@ func (e *LLMExecutor) executeProvider(ctx context.Context, step *Step, wf *Workf
 	return nil
 }
 
-// executeClient runs the go-kit client path with optional streaming.
+// executeClient runs the go-kit client path with optional streaming and tool calling.
 func (e *LLMExecutor) executeClient(ctx context.Context, step *Step, wf *Workflow, prompt string) error {
 	msgs := []llm.Message{{Role: "user", Content: prompt}}
+
+	tools := e.parseTools(step.Config)
+	maxTurns := e.parseMaxTurns(step.Config)
+
+	if len(tools) > 0 && e.toolRunner != nil {
+		return e.executeToolLoop(ctx, step, wf, msgs, tools, maxTurns)
+	}
 
 	wantStream, _ := step.Config["stream"].(bool)
 	if wantStream && e.streamCB != nil {

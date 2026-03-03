@@ -173,6 +173,13 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		ex.metrics = e.metrics
 	}
 
+	// Wire ToolRunner into LLMExecutor for tool calling
+	if llmEx, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+		if toolEx, ok := e.executors[StepTool].(*ToolExecutor); ok {
+			llmEx.SetToolRunner(toolEx.runner)
+		}
+	}
+
 	e.executors[StepWorkflow] = NewSubWorkflowExecutor(e)
 	e.executors[StepForEach] = NewForEachExecutor(e)
 	e.executors[StepBranchAll] = NewBranchAllExecutor(e)
