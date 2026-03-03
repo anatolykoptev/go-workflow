@@ -162,3 +162,23 @@ func newTestEngine(t *testing.T, runner ToolRunner) (*Engine, *WorkflowStore) {
 	engine := &Engine{store: store, metrics: m, executors: executors}
 	return engine, store
 }
+
+func containsStr(s, sub string) bool {
+	return len(s) > 0 && len(sub) > 0 && (s == sub || len(s) >= len(sub) && searchStr(s, sub))
+}
+
+func searchStr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func truncStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}

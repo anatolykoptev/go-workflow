@@ -302,11 +302,9 @@ func TestConvertN8n_OnlyTrigger(t *testing.T) {
 func TestTemplateStore_LoadsN8nFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write a native template
 	native := `{"name":"Native","steps":[{"id":"s","kind":"message","config":{"content":"hello"}}]}`
 	_ = os.WriteFile(filepath.Join(dir, "native.json"), []byte(native), 0644)
 
-	// Write an n8n template in a subdirectory
 	n8nDir := filepath.Join(dir, "n8n")
 	_ = os.MkdirAll(n8nDir, 0755)
 	n8nJSON := `{
@@ -321,19 +319,16 @@ func TestTemplateStore_LoadsN8nFiles(t *testing.T) {
 
 	store := NewTemplateStore(dir)
 
-	// Should load both
 	names := store.List()
 	if len(names) != 2 {
 		t.Fatalf("templates = %d, want 2 (native + n8n). Got: %v", len(names), names)
 	}
 
-	// Check native loads normally
 	nativeTmpl, ok := store.Get("native")
 	if !ok || nativeTmpl.Name != "Native" {
 		t.Errorf("native template not loaded correctly")
 	}
 
-	// Check n8n was converted
 	n8nTmpl, ok := store.Get("test-wf")
 	if !ok {
 		t.Fatal("n8n template 'test-wf' not found")
@@ -341,7 +336,7 @@ func TestTemplateStore_LoadsN8nFiles(t *testing.T) {
 	if n8nTmpl.Name != "N8n Test" {
 		t.Errorf("n8n template name = %q, want 'N8n Test'", n8nTmpl.Name)
 	}
-	if len(n8nTmpl.Steps) != 1 { // trigger skipped, only "Send Msg" remains
+	if len(n8nTmpl.Steps) != 1 {
 		t.Errorf("n8n steps = %d, want 1", len(n8nTmpl.Steps))
 	}
 }
@@ -394,77 +389,4 @@ func TestTemplateStore_InstantiateN8n(t *testing.T) {
 	if step.Config["tool"] != "wp_seo_audit" {
 		t.Errorf("step tool = %v, want 'wp_seo_audit'", step.Config["tool"])
 	}
-}
-
-// --- Environment variable resolution ---
-
-func TestResolveEnvVars(t *testing.T) {
-	t.Setenv("TEST_VAR", "hello")
-	t.Setenv("EMPTY_VAR", "")
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"${TEST_VAR}", "hello"},
-		{"prefix-${TEST_VAR}-suffix", "prefix-hello-suffix"},
-		{"${NONEXISTENT_VAR}", "${NONEXISTENT_VAR}"}, // keep if not set
-		{"no vars here", "no vars here"},
-		{"${TEST_VAR} and ${TEST_VAR}", "hello and hello"},
-	}
-
-	for _, tt := range tests {
-		got := resolveEnvVars(tt.input)
-		if got != tt.want {
-			t.Errorf("resolveEnvVars(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-// --- Expression conversion ---
-
-func TestConvertN8nExpressions(t *testing.T) {
-	nameToID := map[string]string{
-		"SEO Audit":  "audit",
-		"Fix Images": "fix_images",
-	}
-
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{`$node["SEO Audit"].json.result`, `{{audit}}`},
-		{`$node['Fix Images'].json.field`, `{{fix_images}}`},
-		{`no expressions`, `no expressions`},
-		{``, ``},
-	}
-
-	for _, tt := range tests {
-		got := convertN8nExpressions(tt.input, nameToID)
-		if got != tt.want {
-			t.Errorf("convertN8nExpressions(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-// helpers
-
-func containsStr(s, sub string) bool {
-	return len(s) > 0 && len(sub) > 0 && (s == sub || len(s) >= len(sub) && searchStr(s, sub))
-}
-
-func searchStr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
-
-func truncStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }

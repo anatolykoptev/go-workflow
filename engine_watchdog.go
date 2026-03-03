@@ -1,9 +1,7 @@
 package workflow
 
 import (
-	"context"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -11,8 +9,6 @@ const (
 	defaultStallThreshold = 15 * time.Minute // watchdog: stall detection threshold
 	defaultRetryMaxAge    = 30 * time.Minute // watchdog: auto-retry age window
 )
-
-// --- Stall detection (addresses n8n random workflow stops) ---
 
 // StalledWorkflow describes a workflow with a step that has been running too long.
 type StalledWorkflow struct {
@@ -83,104 +79,6 @@ func (e *Engine) RecoverStalled(threshold time.Duration) int {
 	return recovered
 }
 
-// --- Self-healing: Auto-retry transient errors ---
-
-// transientPatterns are error substrings that indicate a retryable failure.
-var transientPatterns = []string{
-	"capacity exhausted",
-	"rate limit",
-	"429",
-	"503",
-	"timeout",
-	"timed out",
-	"connection refused",
-	"connection reset",
-	"temporary failure",
-	"empty model response",
-	"missing thought",
-	"thought_signature",
-	"UNAVAILABLE",
-	"RESOURCE_EXHAUSTED",
-}
-
-// IsTransientError checks if an error message matches known transient patterns.
-func IsTransientError(errMsg string) bool {
-	lower := strings.ToLower(errMsg)
-	for _, p := range transientPatterns {
-		if strings.Contains(lower, strings.ToLower(p)) {
-			return true
-		}
-	}
-	return false
-}
-
-// findRetryableFailedStep returns the ID of the first StepFailed step in the workflow.
-// Returns "" if no retryable step is found (e.g., all failures are dead-lettered).
-func findRetryableFailedStep(wf *Workflow) string {
-	for _, s := range wf.Steps {
-		if s.State == StepFailed {
-			return s.ID
-		}
-	}
-	return "" // no retryable step (may be dead-lettered only)
-}
-
-// AutoRetryFailed checks recently failed workflows for transient errors and retries them.
-// Returns the number of workflows retried. Only retries workflows that failed within maxAge.
-func (e *Engine) AutoRetryFailed(maxAge time.Duration) int {
-	failed := e.store.List(StateFailed)
-	cutoff := time.Now().Add(-maxAge).UnixMilli()
-	retried := 0
-
-	for _, wf := range failed {
-		if wf.UpdatedAt < cutoff {
-			continue // too old
-		}
-		if !IsTransientError(wf.Error) {
-			continue // permanent error
-		}
-
-		failedStepID := findRetryableFailedStep(wf)
-		if failedStepID == "" {
-			continue
-		}
-
-		err := e.store.Modify(wf.ID, func(w *Workflow) {
-			s := w.GetStep(failedStepID)
-			if s == nil || s.State != StepFailed {
-				return
-			}
-			s.State = StepPending
-			s.Error = ""
-			s.StartedAt = 0
-			s.EndedAt = 0
-			w.State = StateRunning
-			w.Error = ""
-			w.UpdatedAt = time.Now().UnixMilli()
-		})
-		if err != nil {
-			continue
-		}
-
-		e.getMetrics().StepsRetried.Add(1)
-		e.log().Info("auto-retrying transient failure",
-			"component", "workflow",
-			"workflow", wf.ID,
-			"step", failedStepID,
-			"error", wf.Error,
-		)
-
-		go func(id string) {
-			e.ResumeAsync(context.Background(), id)
-		}(wf.ID)
-		retried++
-	}
-
-	return retried
-}
-
-// --- Watchdog goroutine ---
-
 // StartWatchdog begins a background goroutine that periodically:
 // 1. Recovers stalled workflows (running > 15min)
 // 2. Auto-retries recently failed workflows with transient errors
@@ -214,30 +112,31 @@ func (e *Engine) StartWatchdog(interval time.Duration) {
 				e.log().Info("watchdog stopped", "component", "workflow")
 				return
 			case <-ticker.C:
-				// 1. Recover stalled steps
-				recovered := e.RecoverStalled(defaultStallThreshold)
-				if recovered > 0 {
-					e.log().Warn("watchdog recovered stalled",
-						"component", "workflow",
-						"count", recovered,
-					)
-					e.getMetrics().HooksFired.Add(1) // reuse counter for watchdog actions
-				}
-
-				// 2. Auto-retry transient failures (within last 30 min)
-				retried := e.AutoRetryFailed(defaultRetryMaxAge)
-				if retried > 0 {
-					e.log().Info("watchdog auto-retried transient failures",
-						"component", "workflow",
-						"count", retried,
-					)
-				}
-
-				// 3. Auto-resume suspended workflows past deadline
-				e.resumeSuspended()
+				e.runWatchdogCycle()
 			}
 		}
 	}()
+}
+
+func (e *Engine) runWatchdogCycle() {
+	recovered := e.RecoverStalled(defaultStallThreshold)
+	if recovered > 0 {
+		e.log().Warn("watchdog recovered stalled",
+			"component", "workflow",
+			"count", recovered,
+		)
+		e.getMetrics().HooksFired.Add(1)
+	}
+
+	retried := e.AutoRetryFailed(defaultRetryMaxAge)
+	if retried > 0 {
+		e.log().Info("watchdog auto-retried transient failures",
+			"component", "workflow",
+			"count", retried,
+		)
+	}
+
+	e.resumeSuspended()
 }
 
 // StopWatchdog stops the background watchdog goroutine.
@@ -247,39 +146,5 @@ func (e *Engine) StopWatchdog() {
 	}
 	if e.scheduler != nil {
 		e.scheduler.Stop()
-	}
-}
-
-// resumeSuspended finds paused workflows with expired suspend deadlines and resumes them.
-func (e *Engine) resumeSuspended() {
-	paused := e.store.List(StatePaused)
-	nowMS := time.Now().UnixMilli()
-
-	for _, w := range paused {
-		var deadline int64
-		for k, v := range w.Context {
-			if strings.HasSuffix(k, "_suspend_until_ms") {
-				if d, ok := v.(float64); ok && int64(d) > 0 {
-					deadline = int64(d)
-					break
-				}
-				if d, ok := v.(int64); ok && d > 0 {
-					deadline = d
-					break
-				}
-			}
-		}
-
-		if deadline > 0 && nowMS >= deadline {
-			_ = e.store.Modify(w.ID, func(w *Workflow) {
-				w.State = StateRunning
-				w.UpdatedAt = nowMS
-			})
-			e.log().Info("watchdog resumed suspended workflow",
-				"component", "workflow",
-				"workflow", w.ID,
-			)
-			e.ResumeAsync(context.Background(), w.ID)
-		}
 	}
 }

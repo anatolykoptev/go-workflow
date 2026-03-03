@@ -194,46 +194,44 @@ func (ts *TemplateStore) loadDirLocked(dir string) {
 	}
 
 	for _, entry := range entries {
-		// Recurse into subdirectories (e.g., n8n/)
 		if entry.IsDir() {
 			ts.loadDirLocked(filepath.Join(dir, entry.Name()))
 			continue
 		}
-
-		fullPath := filepath.Join(dir, entry.Name())
-		fname := entry.Name()
-
-		// n8n format: *.n8n.json
-		if strings.HasSuffix(fname, ".n8n.json") {
-			data, err := os.ReadFile(fullPath)
-			if err != nil {
-				continue
-			}
-			tmpl, err := ConvertN8nToTemplate(data)
-			if err != nil {
-				continue
-			}
-			name := strings.TrimSuffix(fname, ".n8n.json")
-			ts.templates[name] = tmpl
-			continue
-		}
-
-		// Native Vaelor format: *.json
-		if filepath.Ext(fname) != ".json" {
-			continue
-		}
-
-		data, err := os.ReadFile(fullPath)
-		if err != nil {
-			continue
-		}
-
-		var tmpl Template
-		if err := json.Unmarshal(data, &tmpl); err != nil {
-			continue
-		}
-
-		name := strings.TrimSuffix(fname, ".json")
-		ts.templates[name] = &tmpl
+		ts.loadTemplateFile(filepath.Join(dir, entry.Name()), entry.Name())
 	}
+}
+
+func (ts *TemplateStore) loadTemplateFile(fullPath, fname string) {
+	if strings.HasSuffix(fname, ".n8n.json") {
+		ts.loadN8nTemplate(fullPath, fname)
+		return
+	}
+	if filepath.Ext(fname) == ".json" {
+		ts.loadNativeTemplate(fullPath, fname)
+	}
+}
+
+func (ts *TemplateStore) loadN8nTemplate(fullPath, fname string) {
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return
+	}
+	tmpl, err := ConvertN8nToTemplate(data)
+	if err != nil {
+		return
+	}
+	ts.templates[strings.TrimSuffix(fname, ".n8n.json")] = tmpl
+}
+
+func (ts *TemplateStore) loadNativeTemplate(fullPath, fname string) {
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return
+	}
+	var tmpl Template
+	if err := json.Unmarshal(data, &tmpl); err != nil {
+		return
+	}
+	ts.templates[strings.TrimSuffix(fname, ".json")] = &tmpl
 }
