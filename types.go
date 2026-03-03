@@ -139,8 +139,9 @@ type Workflow struct {
 	AllowedTools  []string        `json:"allowed_tools,omitempty"` // restrict tool steps to these tools; empty = all allowed
 	Security      *SecurityPolicy `json:"security,omitempty"`      // execution limits and constraints
 	Error         string          `json:"error,omitempty"`
-	StepsExecuted int             `json:"steps_executed,omitempty"` // total steps executed (including retries)
-	CreatedAt     int64           `json:"created_at_ms"`
+	StepsExecuted int                    `json:"steps_executed,omitempty"` // total steps executed (including retries)
+	Reducers      map[string]ReducerKind `json:"reducers,omitempty"`       // per-key context merge strategy
+	CreatedAt     int64                  `json:"created_at_ms"`
 	UpdatedAt     int64           `json:"updated_at_ms"`
 }
 

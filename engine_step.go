@@ -153,10 +153,7 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 			s.Result = stepResult
 			s.EndedAt = endedAt
 		}
-		// Merge context from executor
-		for k, v := range stepContext {
-			w.Context[k] = v
-		}
+		mergeContext(w, stepContext)
 		w.StepsExecuted++
 		w.UpdatedAt = time.Now().UnixMilli()
 	})
@@ -190,9 +187,7 @@ func (e *Engine) handleSuspend(workflowID, stepID string, step *Step, stepContex
 			s.Result = step.Result
 			s.EndedAt = endedAt
 		}
-		for k, v := range stepContext {
-			w.Context[k] = v
-		}
+		mergeContext(w, stepContext)
 		w.StepsExecuted++
 		w.State = StatePaused
 		w.UpdatedAt = time.Now().UnixMilli()
