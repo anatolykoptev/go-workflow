@@ -94,6 +94,20 @@ func WithToolRunner(t ToolRunner) EngineOption {
 	}
 }
 
+// WithMCPServers creates an MCPToolRunner for the given servers (serverID → URL).
+// If a ToolRunner is already set, wraps both in a MultiToolRunner.
+func WithMCPServers(servers map[string]string) EngineOption {
+	return func(e *Engine) {
+		mcpRunner := NewMCPToolRunner(servers)
+		if existing, ok := e.executors[StepTool].(*ToolExecutor); ok {
+			multi := NewMultiToolRunner(existing.runner, mcpRunner)
+			e.executors[StepTool] = NewToolExecutor(multi)
+		} else {
+			e.executors[StepTool] = NewToolExecutor(mcpRunner)
+		}
+	}
+}
+
 // WithAgentRunner sets the agent runner for agent steps.
 func WithAgentRunner(a AgentRunner) EngineOption {
 	return func(e *Engine) {
