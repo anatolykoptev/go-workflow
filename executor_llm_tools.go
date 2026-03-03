@@ -9,11 +9,13 @@ import (
 )
 
 // executeToolLoop runs the multi-turn tool calling loop.
+// Stores final content in wf.Context[step.ID] and tool call log in wf.Context[step.ID+"_tool_calls"].
 func (e *LLMExecutor) executeToolLoop(
 	ctx context.Context, step *Step, wf *Workflow,
 	messages []llm.Message, tools []llm.Tool, maxTurns int,
 ) error {
 	var totalUsage llm.Usage
+	var toolLog []map[string]any
 
 	for turn := range maxTurns {
 		resp, err := e.client.Chat(ctx, messages, llm.WithTools(tools))
@@ -26,6 +28,9 @@ func (e *LLMExecutor) executeToolLoop(
 		if len(resp.ToolCalls) == 0 {
 			step.Result = resp.Content
 			wf.Context[step.ID] = resp.Content
+			if len(toolLog) > 0 {
+				wf.Context[step.ID+"_tool_calls"] = toolLog
+			}
 			recordUsage(step.ID, wf, e.metrics, totalUsage.PromptTokens, totalUsage.CompletionTokens, "")
 			return nil
 		}
@@ -36,7 +41,7 @@ func (e *LLMExecutor) executeToolLoop(
 			ToolCalls: resp.ToolCalls,
 		})
 
-		// Execute each tool call
+		// Execute each tool call and log results
 		for _, tc := range resp.ToolCalls {
 			result, toolErr := e.executeTool(ctx, tc)
 			if toolErr != nil {
@@ -46,6 +51,12 @@ func (e *LLMExecutor) executeToolLoop(
 				Role:       "tool",
 				Content:    result,
 				ToolCallID: tc.ID,
+			})
+			toolLog = append(toolLog, map[string]any{
+				"id":     tc.ID,
+				"name":   tc.Function.Name,
+				"args":   tc.Function.Arguments,
+				"result": result,
 			})
 		}
 	}

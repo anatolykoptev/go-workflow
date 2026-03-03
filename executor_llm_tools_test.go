@@ -105,6 +105,21 @@ func TestLLMExecutor_ToolCalling_SingleTurn(t *testing.T) {
 	if m.LLMTokensOutput.Load() != 25 {
 		t.Errorf("LLMTokensOutput = %d, want 25", m.LLMTokensOutput.Load())
 	}
+
+	// Verify tool call log stored in context
+	toolCalls, ok := wf.Context["s1_tool_calls"].([]map[string]any)
+	if !ok {
+		t.Fatalf("tool_calls not stored in context: %T", wf.Context["s1_tool_calls"])
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool_calls length = %d, want 1", len(toolCalls))
+	}
+	if toolCalls[0]["name"] != "echo" {
+		t.Errorf("tool_calls[0].name = %v, want %q", toolCalls[0]["name"], "echo")
+	}
+	if toolCalls[0]["result"] != "hello" {
+		t.Errorf("tool_calls[0].result = %v, want %q", toolCalls[0]["result"], "hello")
+	}
 }
 
 func TestLLMExecutor_ToolCalling_MaxTurnsLimit(t *testing.T) {
