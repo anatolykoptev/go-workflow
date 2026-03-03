@@ -1,11 +1,12 @@
 # go-workflow
 
-A standalone DAG workflow engine for Go. Supports 9 step types, pluggable persistence (file/SQLite/PostgreSQL), production retry with exponential backoff, n8n import, template system, security policies, approval flows, watchdog, and metrics.
+A standalone DAG workflow engine for Go. Supports 9 step types, pluggable persistence (file/SQLite/PostgreSQL), distributed execution via PostgreSQL queue, production retry with exponential backoff, n8n import, template system, security policies, approval flows, watchdog, and metrics.
 
 Extracted from [Vaelor](https://github.com/VaelorAI/Vaelor) for reuse in other bots, MCP servers, and automation tools.
 
 ## Features
 
+- **Distributed execution** — dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue
 - **DAG execution** — steps run in parallel when dependencies allow
 - **9 step types** — tool, llm, agent, a2a, message, condition, transform, approval, workflow (sub-workflows)
 - **Pluggable persistence** — JSON files (default), SQLite, or PostgreSQL via `StoreBackend` interface ([docs](docs/PERSISTENCE.md))
@@ -108,6 +109,9 @@ All external dependencies are injected via interfaces:
 - `MessagePublisher` — deliver messages to users
 - `HookPublisher` — fire lifecycle events
 - `SkillResolver` — load skill prompts by name
+- `StepDispatcher` — route steps to local or remote execution
+- `StepWorkerQueue` — distributed work queue (Dequeue/Complete/Fail/Heartbeat)
+- `StepReaper` — reclaim steps from dead workers
 
 ## Distributed Execution (v0.8.0)
 
