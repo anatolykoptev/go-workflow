@@ -1,162 +1,196 @@
 # go-workflow
 
-A standalone DAG workflow engine for Go. Supports 9 step types, pluggable persistence (file/SQLite/PostgreSQL), distributed execution via PostgreSQL queue, production retry with exponential backoff, n8n import, template system, security policies, approval flows, watchdog, and metrics.
+Standalone DAG workflow engine for Go. 13 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-Extracted from [Vaelor](https://github.com/VaelorAI/Vaelor) for reuse in other bots, MCP servers, and automation tools.
+**v0.8.1** | 291 tests | Go 1.26 | [MIT License](LICENSE)
 
 ## Features
 
-- **Distributed execution** — dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue
 - **DAG execution** — steps run in parallel when dependencies allow
-- **9 step types** — tool, llm, agent, a2a, message, condition, transform, approval, workflow (sub-workflows)
-- **Pluggable persistence** — JSON files (default), SQLite, or PostgreSQL via `StoreBackend` interface ([docs](docs/PERSISTENCE.md))
-- **Production retry** — exponential backoff, per-step timeout, conditional retry (`retry_on`/`skip_on`), dead letter state
-- **Idempotency** — `IdempotencyKey` prevents duplicate workflow runs
+- **13 step types** — tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop
+- **MCP integration** — `WithMCPServers()` connects to any MCP server, auto-discovers tools
+- **Templates** — parameterized workflow definitions with `{{variable}}` substitution, loaded from JSON files
+- **Approval flow** — pause workflow, await human/AI approval, resume or reject
+- **Pluggable persistence** — JSON files (default), SQLite, or PostgreSQL
+- **Distributed execution** — dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue
+- **Production retry** — exponential backoff, per-step timeout, conditional retry/skip, dead letter
 - **Crash recovery** — `RecoverAll()` resumes workflows interrupted by process crash
-- **n8n compatibility** — import n8n workflow JSON and convert to native templates
-- **Template system** — parameterized workflow definitions with `{{variable}}` substitution
+- **Idempotency** — `IdempotencyKey` prevents duplicate workflow runs
 - **Security policies** — step budgets, duration limits, tool allow/deny lists, secret masking
-- **Approval flow** — pause workflow, await human approval, resume or reject
 - **Watchdog** — auto-detect stalled steps, auto-retry transient failures
+- **n8n import** — convert n8n workflow JSON to native templates
+- **Scheduler + Cron** — time-based workflow triggers
 - **Metrics** — atomic counters for workflows, steps, agents, hooks, triggers
 
 ## Quick Start
 
 ```go
-import (
-    "github.com/anatolykoptev/go-workflow"
-    "github.com/anatolykoptev/go-workflow/store"
+engine := workflow.NewEngine(store,
+    workflow.WithMCPServers(map[string]string{
+        "go-wp":     "http://127.0.0.1:8894/mcp",
+        "go-search": "http://127.0.0.1:8890/mcp",
+    }),
+    workflow.WithLLMClient(llmClient),
 )
 
-// Create a store — pick your backend
-fileStore, _ := store.NewFileStore("/path/to/workflows")       // JSON files (default)
-// fileStore, _ := store.NewSQLiteStore("/path/to/db.sqlite")  // SQLite
-// fileStore, _ := store.NewPostgresStore("postgres://...")     // PostgreSQL
+engine.RecoverAll(ctx)
 
-// Create engine with functional options
-engine := workflow.NewEngine(fileStore,
-    workflow.WithToolRunner(myToolRunner),
-    workflow.WithLLMProvider(myLLMProvider),
-    workflow.WithLogger(slog.Default()),
-)
-
-// Recover any workflows interrupted by a previous crash
-engine.RecoverAll(context.Background())
-
-// Create and run a workflow
-wf := workflow.NewWorkflow("wf-1", "My Workflow", "owner:123", []workflow.Step{
-    {ID: "fetch", Kind: workflow.StepTool, Config: map[string]any{
-        "tool": "web_fetch",
-        "args": map[string]any{"url": "https://example.com"},
+wf := workflow.NewWorkflow("wf-1", "Content Pipeline", "ai:claude", []workflow.Step{
+    {ID: "research", Kind: workflow.StepTool, Config: map[string]any{
+        "tool": "wp_research",
+        "args": map[string]any{"topic": "смотровые площадки", "count": 12},
     }},
-    {ID: "analyze", Kind: workflow.StepLLM, Config: map[string]any{
-        "prompt":     "Analyze: {{fetch}}",
-        "timeout_ms": 30000,
-    }, DependsOn: []string{"fetch"}},
+    {ID: "select", Kind: workflow.StepApproval, Config: map[string]any{
+        "message": "Review places and select top 12",
+    }, DependsOn: []string{"research"}},
+    {ID: "images", Kind: workflow.StepTool, Config: map[string]any{
+        "tool": "wp_image",
+        "args": map[string]any{"action": "batch"},
+    }, DependsOn: []string{"select"}},
 })
-wf.IdempotencyKey = "daily-fetch-2024-01-15"
 
 _ = store.Save(wf)
-_ = engine.Start(context.Background(), "wf-1")
+_ = engine.StartAsync(ctx, "wf-1") // runs in background, pauses at approval
+```
+
+## MCP Integration
+
+Connect to any MCP server. Tools are auto-discovered via `ListTools`.
+
+```go
+engine := workflow.NewEngine(store,
+    workflow.WithMCPServers(map[string]string{
+        "wordpress": "http://127.0.0.1:8894/mcp",
+        "search":    "http://127.0.0.1:8890/mcp",
+        "browser":   "http://127.0.0.1:8901/mcp",
+    }),
+)
+
+// Steps reference tools by name — routing is automatic:
+// "wp_post"       → wordpress server
+// "smart_search"  → search server
+// "fetch_smart"   → browser server
+```
+
+`MCPToolRunner` handles lazy connection, tool discovery, and multi-server routing. Combined with local `ToolRunner` via `MultiToolRunner`.
+
+## Templates
+
+JSON files loaded by `TemplateStore`. Parameters replace `{{key}}` placeholders.
+
+```json
+{
+  "name": "Create collection: {{topic}}",
+  "params": {"topic": "Article topic", "count": "Number of places"},
+  "defaults": {"count": 12},
+  "steps": [
+    {"id": "research", "kind": "tool", "config": {"tool": "wp_research", "args": {"topic": "{{topic}}", "count": "{{count}}"}}},
+    {"id": "select",   "kind": "approval", "config": {"message": "Select places"}, "depends_on": ["research"]},
+    {"id": "enrich",   "kind": "tool", "config": {"tool": "wp_enrich"}, "depends_on": ["select"]},
+    {"id": "compose",  "kind": "approval", "config": {"message": "Write content"}, "depends_on": ["enrich"]},
+    {"id": "publish",  "kind": "tool", "config": {"tool": "wp_post"}, "depends_on": ["compose"]}
+  ]
+}
+```
+
+```go
+ts := workflow.NewTemplateStore("/path/to/templates")
+wf, _ := ts.Instantiate("create-collection", "wf-123", "ai:claude", map[string]any{
+    "topic": "смотровые площадки",
+    "count": 15,
+})
+```
+
+## Approval Flow
+
+Steps with `Kind: StepApproval` pause the workflow. Resume via `HandleApproval`:
+
+```go
+engine := workflow.NewEngine(store,
+    workflow.WithApprovalNotifier(func(wf *workflow.Workflow, step *workflow.Step) {
+        // Notify AI/human that approval is needed
+        log.Printf("Workflow %s waiting at step %s", wf.ID, step.ID)
+    }),
+    workflow.WithCompletionNotifier(func(wf *workflow.Workflow) {
+        log.Printf("Workflow %s completed", wf.ID)
+    }),
+)
+
+// Later, when approved:
+engine.HandleApproval("wf-123", true)  // or false to reject
+engine.ResumeAsync(ctx, "wf-123")
 ```
 
 ## Storage Backends
 
-Three backends ship out of the box. All implement `StoreBackend` and are interchangeable.
-
 | Backend | Constructor | Use case |
 |---------|-------------|----------|
-| JSON files | `store.NewFileStore(dir)` | Development, single-process deployments |
+| JSON files | `store.NewFileStore(dir)` | Development, single-process |
 | SQLite | `store.NewSQLiteStore(path)` | Tests, single-binary deployments |
-| PostgreSQL | `store.NewPostgresStore(dsn)` | Production, multi-process access |
+| PostgreSQL | `store.NewPostgresStore(dsn)` | Production, multi-process |
 
-See [docs/PERSISTENCE.md](docs/PERSISTENCE.md) for schema, configuration, and custom backend guide.
+## Step Types
+
+| Kind | Executor | Description |
+|------|----------|-------------|
+| `tool` | `ToolExecutor` | Call a named tool (local or MCP) |
+| `llm` | `LLMExecutor` | Send prompt to LLM, supports tool calling |
+| `agent` | `AgentExecutor` | Delegate to a full agent loop |
+| `a2a` | `A2AExecutor` | Call remote A2A agent |
+| `message` | `MessageExecutor` | Send message to user channel |
+| `condition` | `ConditionExecutor` | Branch on expression |
+| `transform` | `TransformExecutor` | Transform data between steps |
+| `approval` | `ApprovalExecutor` | Pause for human/AI approval |
+| `workflow` | `SubWorkflowExecutor` | Run a sub-workflow |
+| `foreach` | `ForEachExecutor` | Iterate over collection |
+| `branchall` | `BranchAllExecutor` | Run all branches in parallel |
+| `suspend` | `SuspendExecutor` | Suspend with TTL |
+| `noop` | `NoopExecutor` | Join point, completes immediately |
 
 ## Retry & Timeout
-
-Configure per step via `Config["retry"]` and `Config["timeout_ms"]`:
 
 ```go
 step := workflow.Step{
     ID:   "flaky-api",
     Kind: workflow.StepTool,
     Config: map[string]any{
-        "tool": "http_request",
-        "timeout_ms": 10000,  // 10s per-step timeout
+        "tool":       "http_request",
+        "timeout_ms": 10000,
         "retry": map[string]any{
-            "max":                3,
-            "delay_ms":          1000,
-            "backoff_multiplier": 2.0,   // 1s → 2s → 4s
-            "max_delay_ms":      10000,  // cap at 10s
-            "retry_on":  []any{"timeout", "503"},  // only retry these
-            "skip_on":   []any{"401", "403"},       // never retry these
+            "max": 3, "delay_ms": 1000, "backoff_multiplier": 2.0,
+            "retry_on": []any{"timeout", "503"},
+            "skip_on":  []any{"401", "403"},
         },
     },
 }
 ```
 
-After exhausting retries, steps enter `StepDeadLettered` state (distinct from `StepFailed`) — the watchdog will not re-retry them.
+After exhausting retries, steps enter `StepDeadLettered` state — the watchdog will not re-retry them.
 
 ## Interfaces
 
 All external dependencies are injected via interfaces:
 
-- `StoreBackend` — persist and load workflows
-- `ToolRunner` — execute named tools
-- `LLMProvider` — send prompts to an LLM
-- `AgentRunner` — delegate tasks to a full agent loop
-- `A2ACaller` — call remote A2A agents
-- `MessagePublisher` — deliver messages to users
-- `HookPublisher` — fire lifecycle events
-- `SkillResolver` — load skill prompts by name
-- `StepDispatcher` — route steps to local or remote execution
-- `StepWorkerQueue` — distributed work queue (Dequeue/Complete/Fail/Heartbeat)
-- `StepReaper` — reclaim steps from dead workers
+| Interface | Purpose |
+|-----------|---------|
+| `StoreBackend` | Persist and load workflows |
+| `ToolRunner` | Execute named tools |
+| `LLMProvider` | Send prompts to LLM |
+| `AgentRunner` | Delegate to agent loop |
+| `A2ACaller` | Call remote A2A agents |
+| `MessagePublisher` | Deliver messages to users |
+| `HookPublisher` | Fire lifecycle events |
+| `SkillResolver` | Load skill prompts by name |
+| `StepDispatcher` | Route steps to local/remote execution |
+| `StepWorkerQueue` | Distributed work queue |
+| `StepReaper` | Reclaim steps from dead workers |
 
-## Distributed Execution (v0.8.0)
+## Distributed Execution
 
-Steps can be executed on remote workers via a PostgreSQL-based queue.
+Dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue. Features: heartbeat protocol, concurrency limits, LISTEN/NOTIFY, graceful shutdown. Default `LocalDispatcher` preserves in-process execution (zero config change).
 
-### Local mode (default -- zero config change)
+## Consumers
 
-```go
-engine := workflow.NewEngine(store)
-// Steps execute in-process via LocalDispatcher, same as before
-```
-
-### Distributed mode
-
-```go
-// On the coordinator:
-queue, _ := store.NewStepQueue(dsn)
-dispatcher := workflow.NewPostgresDispatcher(queue)
-listener, _ := workflow.NewStepListener(dsn)
-
-engine := workflow.NewEngine(store,
-    workflow.WithDispatcher(dispatcher),
-    workflow.WithStepListener(listener),
-)
-go engine.ListenForResults(ctx, listener)
-
-// On worker nodes:
-worker, _ := workflow.NewWorkerNode(workflow.WorkerConfig{
-    ID:        "worker-1",
-    Queue:     queue,
-    StepKinds: []string{"llm", "tool", "agent"},
-    Engine:    workerEngine,
-})
-worker.Run(ctx)
-```
-
-### Features
-
-- **SKIP LOCKED queue**: PostgreSQL-native work distribution, no Redis/Kafka needed
-- **Heartbeat protocol**: Workers send periodic heartbeats; stale items auto-reclaimed via `ReapStale`
-- **Concurrency control**: Per step kind and per entity key limits via `ConcurrencyLimiter`
-- **LISTEN/NOTIFY**: Near-zero latency result delivery via PostgreSQL notifications
-- **Graceful shutdown**: `DrainAndStop` waits for current step, then stops the worker
-- **100% backward compatible**: Default `LocalDispatcher` preserves in-process execution
-
-## License
-
-MIT
+- **vaelor** — AI agent orchestrator (Telegram, Discord, A2A)
+- **krolik-agent** — lightweight Go agent
+- **go-wp** — WordPress content pipeline (planned)
