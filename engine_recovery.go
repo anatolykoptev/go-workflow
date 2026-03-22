@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const approvalResult = "approved"
+
 // GracefulShutdown pauses all workflows and stops the watchdog.
 func (e *Engine) GracefulShutdown(timeout time.Duration) int {
 	paused := e.PauseAll()
@@ -131,9 +133,9 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 			s := &w.Steps[i]
 			if s.Kind == StepApproval && s.State == StepPending {
 				s.State = StepCompleted
-				s.Result = "approved"
+				s.Result = approvalResult
 				s.EndedAt = time.Now().UnixMilli()
-				w.Context[s.ID] = "approved"
+				w.Context[s.ID] = approvalResult
 				break
 			}
 		}
@@ -148,7 +150,7 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 
 // HandleApprovalWithData resumes a workflow with structured data from the approver.
 // Data is stored in wf.Context[stepID] for downstream steps to consume via $steps.{id}.result.
-// If data is nil, falls back to "approved" string (same as HandleApproval).
+// If data is nil, falls back to approvalResult string (same as HandleApproval).
 func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data map[string]any) error {
 	if !approved {
 		return e.HandleApproval(workflowID, false)
@@ -172,8 +174,8 @@ func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data m
 					s.Result = data
 					w.Context[s.ID] = data
 				} else {
-					s.Result = "approved"
-					w.Context[s.ID] = "approved"
+					s.Result = approvalResult
+					w.Context[s.ID] = approvalResult
 				}
 				break
 			}

@@ -712,7 +712,7 @@ func TestHandleApprovalWithData_NilFallback(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	loaded, _ := s.Load("wf-nil")
-	if loaded.Context["approve"] != "approved" {
+	if loaded.Context["approve"] != approvalResult {
 		t.Errorf("nil data should fall back to 'approved', got %v", loaded.Context["approve"])
 	}
 }
