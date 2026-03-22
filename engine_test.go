@@ -665,6 +665,58 @@ func TestMetricsCancel(t *testing.T) {
 	}
 }
 
+func TestHandleApprovalWithData(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, s := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-data", "Test", "test", []Step{
+		{ID: "s1", Kind: StepTool, Config: map[string]any{"tool": "ta"}, State: StepCompleted},
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, DependsOn: []string{"s1"}, State: StepPending},
+	})
+	_ = s.Save(wf)
+	_ = s.Modify("wf-data", func(w *Workflow) {
+		w.State = StateWaitingApproval
+	})
+
+	data := map[string]any{"selected": []any{"place1", "place2"}}
+	if err := engine.HandleApprovalWithData("wf-data", true, data); err != nil {
+		t.Fatalf("HandleApprovalWithData: %v", err)
+	}
+
+	loaded, _ := s.Load("wf-data")
+	if loaded.State != StateRunning {
+		t.Errorf("expected running, got %s", loaded.State)
+	}
+	ctx, ok := loaded.Context["approve"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected map in context, got %T", loaded.Context["approve"])
+	}
+	if ctx["selected"] == nil {
+		t.Error("missing selected in context data")
+	}
+}
+
+func TestHandleApprovalWithData_NilFallback(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, s := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-nil", "Test", "test", []Step{
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	_ = s.Save(wf)
+	_ = s.Modify("wf-nil", func(w *Workflow) { w.State = StateWaitingApproval })
+
+	if err := engine.HandleApprovalWithData("wf-nil", true, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	loaded, _ := s.Load("wf-nil")
+	if loaded.Context["approve"] != "approved" {
+		t.Errorf("nil data should fall back to 'approved', got %v", loaded.Context["approve"])
+	}
+}
+
 // suppress unused import warnings
 var (
 	_ = fmt.Sprintf

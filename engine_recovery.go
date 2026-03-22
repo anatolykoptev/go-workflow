@@ -146,6 +146,47 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 	})
 }
 
+// HandleApprovalWithData resumes a workflow with structured data from the approver.
+// Data is stored in wf.Context[stepID] for downstream steps to consume via $steps.{id}.result.
+// If data is nil, falls back to "approved" string (same as HandleApproval).
+func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data map[string]any) error {
+	if !approved {
+		return e.HandleApproval(workflowID, false)
+	}
+
+	w, err := e.loadWorkflow(workflowID)
+	if err != nil {
+		return err
+	}
+	if w.State != StateWaitingApproval {
+		return fmt.Errorf("workflow %s is %s, not waiting_approval", workflowID, w.State)
+	}
+
+	return e.store.Modify(workflowID, func(w *Workflow) {
+		for i := range w.Steps {
+			s := &w.Steps[i]
+			if s.Kind == StepApproval && s.State == StepPending {
+				s.State = StepCompleted
+				s.EndedAt = time.Now().UnixMilli()
+				if data != nil {
+					s.Result = data
+					w.Context[s.ID] = data
+				} else {
+					s.Result = "approved"
+					w.Context[s.ID] = "approved"
+				}
+				break
+			}
+		}
+		if w.CurrentStep != "" {
+			w.InterruptBefore = removeString(w.InterruptBefore, w.CurrentStep)
+			w.InterruptAfter = removeString(w.InterruptAfter, w.CurrentStep)
+		}
+		w.State = StateRunning
+		w.UpdatedAt = time.Now().UnixMilli()
+	})
+}
+
 func (e *Engine) rejectApproval(workflowID string, w *Workflow) error {
 	e.getMetrics().WorkflowsCancelled.Add(1)
 	err := e.store.Modify(workflowID, func(w *Workflow) {
