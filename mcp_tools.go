@@ -18,27 +18,27 @@ type MCPDeps struct {
 // Input types.
 
 type wfCreateInput struct {
-	Template string         `json:"template" jsonschema:"required,description=Template name"`
-	Owner    string         `json:"owner"    jsonschema:"description=Workflow owner"`
-	Params   map[string]any `json:"params"   jsonschema:"description=Template parameters"`
+	Template string         `json:"template" jsonschema:"Template name"`
+	Owner    string         `json:"owner"    jsonschema:"Workflow owner"`
+	Params   map[string]any `json:"params"   jsonschema:"Template parameters"`
 }
 
 type wfStatusInput struct {
-	WorkflowID string `json:"workflow_id" jsonschema:"required,description=Workflow ID"`
+	WorkflowID string `json:"workflow_id" jsonschema:"Workflow ID"`
 }
 
 type wfApproveInput struct {
-	WorkflowID string         `json:"workflow_id" jsonschema:"required,description=Workflow ID"`
-	Approved   bool           `json:"approved"    jsonschema:"description=Approve or reject"`
-	Data       map[string]any `json:"data"        jsonschema:"description=Optional approval data"`
+	WorkflowID string         `json:"workflow_id" jsonschema:"Workflow ID"`
+	Approved   bool           `json:"approved"    jsonschema:"Approve or reject"`
+	Data       map[string]any `json:"data"        jsonschema:"Optional approval data"`
 }
 
 type wfListInput struct {
-	State string `json:"state" jsonschema:"description=Filter by state (empty = active)"`
+	State string `json:"state" jsonschema:"Filter by state (empty = active)"`
 }
 
 type wfCancelInput struct {
-	WorkflowID string `json:"workflow_id" jsonschema:"required,description=Workflow ID"`
+	WorkflowID string `json:"workflow_id" jsonschema:"Workflow ID"`
 }
 
 type wfTemplatesInput struct{}
