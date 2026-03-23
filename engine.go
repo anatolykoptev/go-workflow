@@ -90,6 +90,27 @@ func WithMCPServers(servers map[string]string) EngineOption {
 	}
 }
 
+// WithMCPServerHeaders sets HTTP headers (e.g. Authorization) for a specific MCP server.
+// Must be called after WithMCPServers.
+func WithMCPServerHeaders(serverID string, headers map[string]string) EngineOption {
+	return func(e *Engine) {
+		if te, ok := e.executors[StepTool].(*ToolExecutor); ok {
+			setMCPHeaders(te.runner, serverID, headers)
+		}
+	}
+}
+
+func setMCPHeaders(runner ToolRunner, serverID string, headers map[string]string) {
+	switch r := runner.(type) {
+	case *MCPToolRunner:
+		r.SetHeaders(serverID, headers)
+	case *MultiToolRunner:
+		for _, nr := range r.runners {
+			setMCPHeaders(nr.runner, serverID, headers)
+		}
+	}
+}
+
 func WithAgentRunner(a AgentRunner) EngineOption {
 	return func(e *Engine) {
 		e.executors[StepAgent] = NewAgentExecutor(a, e.metrics)

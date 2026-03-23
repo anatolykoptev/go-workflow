@@ -17,6 +17,7 @@ import (
 // Supports multiple servers with lazy connect and auto-discovery of tool names.
 type MCPToolRunner struct {
 	servers  map[string]string             // serverID → URL
+	headers  map[string]map[string]string  // serverID → HTTP headers
 	clients  map[string]*mcp.Client        // lazy-initialized
 	sessions map[string]*mcp.ClientSession // lazy-initialized
 	routes   map[string]string             // toolName → serverID
@@ -28,10 +29,18 @@ type MCPToolRunner struct {
 func NewMCPToolRunner(servers map[string]string) *MCPToolRunner {
 	return &MCPToolRunner{
 		servers:  servers,
+		headers:  make(map[string]map[string]string),
 		clients:  make(map[string]*mcp.Client),
 		sessions: make(map[string]*mcp.ClientSession),
 		routes:   make(map[string]string),
 	}
+}
+
+// SetHeaders sets HTTP headers for a specific server (e.g. Authorization).
+func (r *MCPToolRunner) SetHeaders(serverID string, headers map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.headers[serverID] = headers
 }
 
 // Execute calls a tool on the appropriate MCP server.
@@ -159,6 +168,23 @@ func (r *MCPToolRunner) discover(ctx context.Context) error {
 	return nil
 }
 
+// headerTransport injects static headers into every request.
+type headerTransport struct {
+	headers map[string]string
+	base    http.RoundTripper
+}
+
+func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	for k, v := range t.headers {
+		req.Header.Set(k, v)
+	}
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(req)
+}
+
 // getSession returns an existing session or creates a new one (double-check locking).
 func (r *MCPToolRunner) getSession(ctx context.Context, serverID string) (*mcp.ClientSession, error) {
 	r.mu.RLock()
@@ -186,11 +212,14 @@ func (r *MCPToolRunner) getSession(ctx context.Context, serverID string) (*mcp.C
 		Version: "0.7.0",
 	}, nil)
 
+	httpClient := &http.Client{Timeout: 120 * time.Second}
+	if hdrs, ok := r.headers[serverID]; ok && len(hdrs) > 0 {
+		httpClient.Transport = &headerTransport{headers: hdrs}
+	}
+
 	transport := &mcp.StreamableClientTransport{
-		Endpoint: url,
-		HTTPClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		Endpoint:             url,
+		HTTPClient:           httpClient,
 		DisableStandaloneSSE: true,
 	}
 
