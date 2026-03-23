@@ -212,7 +212,7 @@ func (r *MCPToolRunner) getSession(ctx context.Context, serverID string) (*mcp.C
 		Version: "0.7.0",
 	}, nil)
 
-	httpClient := &http.Client{Timeout: 120 * time.Second}
+	httpClient := &http.Client{Timeout: 300 * time.Second}
 	if hdrs, ok := r.headers[serverID]; ok && len(hdrs) > 0 {
 		httpClient.Transport = &headerTransport{headers: hdrs}
 	}
