@@ -48,6 +48,10 @@ const (
 const (
 	OnErrorFail = "fail"
 	OnErrorSkip = "skip"
+	// OnErrorContinue is an alias for OnErrorSkip: step is marked skipped and
+	// execution continues with downstream steps. Useful in n8n-style definitions
+	// where "continue" is a natural value for continueOnFail.
+	OnErrorContinue = "continue"
 )
 
 // Built-in tool name constants used as step kind aliases.
@@ -117,25 +121,25 @@ func IsValidStepKind(kind StepKind) bool {
 
 // Workflow is a multi-step execution plan with DAG dependencies and persistence.
 type Workflow struct {
-	ID             string          `json:"id"`
-	Name           string          `json:"name"`
-	TemplateName   string          `json:"template_name,omitempty"` // source template name (for concurrency guards)
-	Description    string          `json:"description,omitempty"`
-	IdempotencyKey string          `json:"idempotency_key,omitempty"` // dedup key — only one active workflow per key
-	Steps          []Step          `json:"steps"`
-	State          WorkflowState   `json:"state"`
-	CurrentStep    string          `json:"current_step,omitempty"`
-	Context        map[string]any  `json:"context"`
-	Owner          string          `json:"owner"`
-	AllowedTools   []string        `json:"allowed_tools,omitempty"` // restrict tool steps to these tools; empty = all allowed
-	Security       *SecurityPolicy `json:"security,omitempty"`      // execution limits and constraints
-	Error          string          `json:"error,omitempty"`
-	StepsExecuted    int                    `json:"steps_executed,omitempty"`   // total steps executed (including retries)
-	Reducers         map[string]ReducerKind `json:"reducers,omitempty"`        // per-key context merge strategy
-	InterruptBefore  []string               `json:"interrupt_before,omitempty"` // pause before these step IDs
-	InterruptAfter   []string               `json:"interrupt_after,omitempty"`  // pause after these step IDs
-	CreatedAt      int64                  `json:"created_at_ms"`
-	UpdatedAt      int64                  `json:"updated_at_ms"`
+	ID              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	TemplateName    string                 `json:"template_name,omitempty"` // source template name (for concurrency guards)
+	Description     string                 `json:"description,omitempty"`
+	IdempotencyKey  string                 `json:"idempotency_key,omitempty"` // dedup key — only one active workflow per key
+	Steps           []Step                 `json:"steps"`
+	State           WorkflowState          `json:"state"`
+	CurrentStep     string                 `json:"current_step,omitempty"`
+	Context         map[string]any         `json:"context"`
+	Owner           string                 `json:"owner"`
+	AllowedTools    []string               `json:"allowed_tools,omitempty"` // restrict tool steps to these tools; empty = all allowed
+	Security        *SecurityPolicy        `json:"security,omitempty"`      // execution limits and constraints
+	Error           string                 `json:"error,omitempty"`
+	StepsExecuted   int                    `json:"steps_executed,omitempty"`   // total steps executed (including retries)
+	Reducers        map[string]ReducerKind `json:"reducers,omitempty"`         // per-key context merge strategy
+	InterruptBefore []string               `json:"interrupt_before,omitempty"` // pause before these step IDs
+	InterruptAfter  []string               `json:"interrupt_after,omitempty"`  // pause after these step IDs
+	CreatedAt       int64                  `json:"created_at_ms"`
+	UpdatedAt       int64                  `json:"updated_at_ms"`
 }
 
 // Step is a single unit of work within a workflow.

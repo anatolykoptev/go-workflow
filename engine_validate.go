@@ -179,7 +179,7 @@ func validateStepTimeout(s Step, errs *[]ValidationError) {
 // validateStepOnError checks that on_error branch references exist.
 func validateStepOnError(s Step, stepIDs map[string]bool, errs *[]ValidationError) {
 	onError := s.GetOnError()
-	if onError != OnErrorFail && onError != OnErrorSkip && onError != "" {
+	if onError != OnErrorFail && onError != OnErrorSkip && onError != OnErrorContinue && onError != "" {
 		if !stepIDs[onError] {
 			*errs = append(*errs, ValidationError{
 				StepID:  s.ID,

@@ -40,9 +40,11 @@ func (e *Engine) StartAsync(ctx context.Context, workflowID string) error {
 
 // ResumeAsync resumes a running workflow in a background goroutine.
 // Used after approval or any state change that allows continued execution.
-func (e *Engine) ResumeAsync(ctx context.Context, workflowID string) {
+// The caller's context is intentionally ignored — the workflow must outlive
+// the HTTP handler or MCP tool call that triggered the resume.
+func (e *Engine) ResumeAsync(_ context.Context, workflowID string) {
 	go func() {
-		if err := e.RunToCompletion(ctx, workflowID); err != nil {
+		if err := e.RunToCompletion(context.Background(), workflowID); err != nil {
 			e.log().Error("async resume failed",
 				"component", "workflow",
 				"workflow", workflowID,

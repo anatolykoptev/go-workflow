@@ -90,7 +90,7 @@ func applyStepFailure(w *Workflow, stepID, errMsg string) bool {
 
 	onError := s.GetOnError()
 	switch {
-	case onError == OnErrorSkip:
+	case onError == OnErrorSkip || onError == OnErrorContinue:
 		s.State = StepSkipped
 		s.Error = errMsg
 		return true
