@@ -4,10 +4,10 @@ go 1.26
 
 require (
 	github.com/anatolykoptev/go-kit v0.6.0
-	github.com/anatolykoptev/go-mcpserver v0.10.1
+	github.com/anatolykoptev/go-mcpserver v0.11.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/modelcontextprotocol/go-sdk v1.4.1
+	github.com/modelcontextprotocol/go-sdk v1.5.0
 	modernc.org/sqlite v1.46.1
 )
 
@@ -31,7 +31,7 @@ require (
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	modernc.org/libc v1.68.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
