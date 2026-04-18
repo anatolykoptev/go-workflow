@@ -3,7 +3,7 @@ module github.com/anatolykoptev/go-workflow
 go 1.26
 
 require (
-	github.com/anatolykoptev/go-kit v0.19.0
+	github.com/anatolykoptev/go-kit v0.20.1
 	github.com/anatolykoptev/go-mcpserver v0.11.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/jmoiron/sqlx v1.4.0
