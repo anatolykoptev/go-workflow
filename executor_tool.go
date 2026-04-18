@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -39,6 +40,28 @@ func (e *ToolExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) er
 	}
 
 	step.Result = result
-	wf.Context[step.ID] = result
+	// Auto-parse JSON so downstream $steps references can traverse fields
+	if parsed := tryParseJSON(result); parsed != nil {
+		wf.Context[step.ID] = parsed
+	} else {
+		wf.Context[step.ID] = result
+	}
 	return nil
+}
+
+// tryParseJSON attempts to parse s as a JSON object or array.
+// Returns parsed value on success, nil on failure or non-object/array.
+func tryParseJSON(s string) any {
+	if len(s) < 2 {
+		return nil
+	}
+	// Only try if it looks like JSON object or array
+	if s[0] != '{' && s[0] != '[' {
+		return nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+		return nil
+	}
+	return parsed
 }
