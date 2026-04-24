@@ -56,39 +56,79 @@ func (e *Engine) ResumeAsync(_ context.Context, workflowID string) {
 }
 
 // RunToCompletion runs Advance in a loop until the workflow stops (completed, failed, approval, paused).
+//
+// When Advance returns an error AND the workflow has entered StateFailed but
+// still has runnable AlwaysRun steps, we keep iterating so cleanup steps drain.
+// The original error is preserved and returned once draining finishes.
 func (e *Engine) RunToCompletion(ctx context.Context, workflowID string) error {
+	var firstErr error
 	for {
 		select {
 		case <-ctx.Done():
+			if firstErr != nil {
+				return firstErr
+			}
 			return ctx.Err()
 		default:
 		}
 
 		advanced, err := e.Advance(ctx, workflowID)
 		if err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			// Drain any remaining always_run steps before returning.
+			if e.hasRunnableAlwaysRun(workflowID) {
+				continue
+			}
+			return firstErr
 		}
 		if !advanced {
-			return nil
+			return firstErr
 		}
 	}
 }
 
+// hasRunnableAlwaysRun reports whether the workflow has any pending AlwaysRun
+// steps whose dependencies have all reached a terminal state (so they could
+// be scheduled by a subsequent Advance call).
+func (e *Engine) hasRunnableAlwaysRun(workflowID string) bool {
+	w, err := e.loadWorkflow(workflowID)
+	if err != nil {
+		return false
+	}
+	for _, sid := range e.findAllRunnable(w) {
+		if s := w.GetStep(sid); s != nil && s.AlwaysRun {
+			return true
+		}
+	}
+	return false
+}
+
 // Advance finds all runnable steps (all deps completed) and executes them.
 // Independent steps run in parallel. Returns true if any step was executed.
+//
+// Special-case: when the workflow is in StateFailed, Advance still drains any
+// pending AlwaysRun steps whose deps have reached a terminal state. Cancelled,
+// Completed, WaitingApproval, and Paused short-circuit unconditionally.
 func (e *Engine) Advance(ctx context.Context, workflowID string) (bool, error) {
 	w, err := e.loadWorkflow(workflowID)
 	if err != nil {
 		return false, err
 	}
 
-	if w.IsTerminal() || w.State == StateWaitingApproval || w.State == StatePaused {
+	if w.State == StateCompleted || w.State == StateCancelled ||
+		w.State == StateWaitingApproval || w.State == StatePaused {
 		return false, nil
 	}
 
 	runnableSteps := e.findAllRunnable(w)
 	if len(runnableSteps) == 0 {
-		e.tryMarkCompleted(w, workflowID)
+		// Nothing left to do: if we're not already failed, try to mark complete.
+		// If we ARE failed, leave the state — failure cause must be preserved.
+		if w.State != StateFailed {
+			e.tryMarkCompleted(w, workflowID)
+		}
 		return false, nil
 	}
 

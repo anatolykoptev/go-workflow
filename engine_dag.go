@@ -41,11 +41,22 @@ func (e *Engine) startWorkflow(workflowID string) (*Workflow, error) {
 
 // findAllRunnable returns IDs of all steps that are pending and have all deps completed.
 // Dead-lettered steps are treated as terminal for dependency resolution.
+//
+// AlwaysRun steps relax the rule slightly: a failed dep also counts as terminal
+// for them (so cleanup can proceed after upstream failure). Pending deps still
+// block — never schedule cleanup with unmet inputs.
 func (e *Engine) findAllRunnable(w *Workflow) []string {
+	// Standard "completed" set (ok / skipped / dead-lettered).
 	completed := make(map[string]bool)
+	// Extended "terminal" set used only for AlwaysRun steps (adds failed).
+	terminal := make(map[string]bool)
 	for _, s := range w.Steps {
-		if s.State == StepCompleted || s.State == StepSkipped || s.State == StepDeadLettered {
+		switch s.State {
+		case StepCompleted, StepSkipped, StepDeadLettered:
 			completed[s.ID] = true
+			terminal[s.ID] = true
+		case StepFailed:
+			terminal[s.ID] = true
 		}
 	}
 
@@ -55,9 +66,21 @@ func (e *Engine) findAllRunnable(w *Workflow) []string {
 			continue
 		}
 
+		// If the workflow has already failed and this step is NOT marked
+		// always_run, do not schedule it. (Plain pending steps must not
+		// surprise-run after a hard failure — preserve original semantics.)
+		if !s.AlwaysRun && w.State == StateFailed {
+			continue
+		}
+
+		pool := completed
+		if s.AlwaysRun {
+			pool = terminal
+		}
+
 		allDepsMet := true
 		for _, dep := range s.DependsOn {
-			if !completed[dep] {
+			if !pool[dep] {
 				allDepsMet = false
 				break
 			}
