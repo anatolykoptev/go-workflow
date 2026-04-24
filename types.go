@@ -154,4 +154,10 @@ type Step struct {
 	Retries   int            `json:"retries,omitempty"`
 	StartedAt int64          `json:"started_at_ms,omitempty"`
 	EndedAt   int64          `json:"ended_at_ms,omitempty"`
+	// AlwaysRun marks the step for teardown-on-failure semantics. When true,
+	// the step runs even after the workflow has entered StateFailed, provided
+	// every direct dependency has reached a terminal state (completed, skipped,
+	// failed, or dead-lettered). Dependencies still in StepPending block it
+	// (so cleanup never runs with unmet inputs).
+	AlwaysRun bool `json:"always_run,omitempty"`
 }
