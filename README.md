@@ -21,6 +21,7 @@ Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pl
 - **n8n import** — convert n8n workflow JSON to native templates
 - **Scheduler + Cron** — time-based workflow triggers
 - **Metrics** — atomic counters for workflows, steps, agents, hooks, triggers
+- **Cost tracking** — every LLM and image step contributes to `Workflow.Cost` (tokens, USD, image bytes). Optional `WithBudget(maxUSD)` aborts overrun workflows with `ErrBudgetExceeded`.
 
 ## Quick Start
 
@@ -146,6 +147,20 @@ engine.ResumeAsync(ctx, "wf-123")
 | `branchall` | `BranchAllExecutor` | Run all branches in parallel |
 | `suspend` | `SuspendExecutor` | Suspend with TTL |
 | `noop` | `NoopExecutor` | Join point, completes immediately |
+| `image` | `ImageExecutor` | Render HTML to PNG/JPEG/WebP/SVG via pluggable `ImageRenderer` |
+| `vision` | `VisionExecutor` | Multimodal LLM call with image attachments (`VisionCapable` provider) |
+
+## Cost tracking
+
+Every LLM call (`StepLLM`, `StepVision`) and every image render (`StepImage`) updates `Workflow.Cost`:
+
+```go
+wf, _ := engine.RunToCompletion(ctx, wf)
+fmt.Printf("Total: %d in / %d out tokens, $%.4f, %d images\n",
+    wf.Cost.InputTokens, wf.Cost.OutputTokens, wf.Cost.USDEstimate, wf.Cost.ImagesRendered)
+```
+
+Optional ceiling: `workflow.WithBudget(0.50)` aborts when the running total exceeds $0.50, surfacing `ErrBudgetExceeded`. Pricing comes from `DefaultCostModel`; override with `WithCostModel(custom)`.
 
 ## Retry & Timeout
 
