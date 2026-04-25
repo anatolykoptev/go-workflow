@@ -45,6 +45,10 @@ type Metrics struct {
 	WorkflowTokensOutputTotal   atomic.Int64
 	WorkflowImagesRenderedTotal atomic.Int64
 	WorkflowBudgetExceededTotal atomic.Int64
+	WebhooksReceived            atomic.Int64
+	WebhooksRejected            atomic.Int64
+	StepCacheHits               atomic.Int64
+	StepCacheMisses             atomic.Int64
 }
 
 // NewMetrics creates a fresh Metrics instance for dependency injection.
@@ -91,6 +95,10 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Workflow tokens output total: %d", m.WorkflowTokensOutputTotal.Load()))
 	lines = append(lines, fmt.Sprintf("  Workflow images rendered total: %d", m.WorkflowImagesRenderedTotal.Load()))
 	lines = append(lines, fmt.Sprintf("  Workflow budget exceeded total: %d", m.WorkflowBudgetExceededTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Webhooks received: %d", m.WebhooksReceived.Load()))
+	lines = append(lines, fmt.Sprintf("  Webhooks rejected: %d", m.WebhooksRejected.Load()))
+	lines = append(lines, fmt.Sprintf("  Step cache hits: %d", m.StepCacheHits.Load()))
+	lines = append(lines, fmt.Sprintf("  Step cache misses: %d", m.StepCacheMisses.Load()))
 	return strings.Join(lines, "\n")
 }
 
@@ -129,4 +137,8 @@ func (m *Metrics) Reset() {
 	m.WorkflowTokensOutputTotal.Store(0)
 	m.WorkflowImagesRenderedTotal.Store(0)
 	m.WorkflowBudgetExceededTotal.Store(0)
+	m.WebhooksReceived.Store(0)
+	m.WebhooksRejected.Store(0)
+	m.StepCacheHits.Store(0)
+	m.StepCacheMisses.Store(0)
 }

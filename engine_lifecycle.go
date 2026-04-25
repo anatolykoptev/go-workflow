@@ -4,6 +4,9 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Start sets a pending workflow to running and begins synchronous execution.
@@ -61,6 +64,23 @@ func (e *Engine) ResumeAsync(_ context.Context, workflowID string) {
 // still has runnable AlwaysRun steps, we keep iterating so cleanup steps drain.
 // The original error is preserved and returned once draining finishes.
 func (e *Engine) RunToCompletion(ctx context.Context, workflowID string) error {
+	// Open a workflow-level OTel span so all child step spans reparent under
+	// it. No-op when no tracer provider is configured.
+	var wfSpan trace.Span
+	if wf, err := e.loadWorkflow(workflowID); err == nil {
+		ctx, wfSpan = e.startWorkflowSpan(ctx, wf)
+		defer func() {
+			// Re-load to capture terminal state on the span.
+			if loaded, lerr := e.loadWorkflow(workflowID); lerr == nil {
+				wfSpan.SetAttributes(workflowSpanFinalAttrs(loaded)...)
+				if loaded.State == StateFailed {
+					wfSpan.SetStatus(codes.Error, loaded.Error)
+				}
+			}
+			wfSpan.End()
+		}()
+	}
+
 	var firstErr error
 	for {
 		select {
