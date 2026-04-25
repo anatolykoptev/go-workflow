@@ -32,6 +32,11 @@ func (e *ToolExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) er
 		for k, v := range a {
 			args[k] = resolveRef(v, wf)
 		}
+	} else if a, ok := step.Config["input"].(map[string]any); ok {
+		// "input" is an alias for "args" — common in n8n-style templates
+		for k, v := range a {
+			args[k] = resolveRef(v, wf)
+		}
 	}
 
 	result, err := e.runner.Execute(ctx, toolName, args)
