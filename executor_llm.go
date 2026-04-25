@@ -168,6 +168,18 @@ func (e *LLMExecutor) executeStream(ctx context.Context, step *Step, wf *Workflo
 	wf.Context[step.ID] = content
 	if u := stream.Usage(); u != nil {
 		recordUsage(step.ID, wf, e.metrics, u.PromptTokens, u.CompletionTokens, "")
+		if e.engine != nil {
+			model, _ := step.Config["model"].(string)
+			if costErr := e.engine.recordStepCost(wf, StepCost{
+				StepID:       step.ID,
+				Kind:         StepLLM,
+				Model:        model,
+				InputTokens:  int64(u.PromptTokens),
+				OutputTokens: int64(u.CompletionTokens),
+			}); costErr != nil {
+				return costErr
+			}
+		}
 	}
 	return nil
 }

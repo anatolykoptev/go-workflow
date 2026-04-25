@@ -13,8 +13,10 @@ import (
 // trigger this error fail; partial cost is preserved on Workflow.Cost.
 var ErrBudgetExceeded = errors.New("workflow budget exceeded")
 
-// usdToCents scales a dollars float to integer cents with rounding.
-const usdToCents = 100.0
+// usdToMicrocents scales a dollars float to integer micro-cents (USD * 1e6)
+// with rounding. Microcents preserve sub-cent precision so cheap models
+// (Haiku/Flash, where a single call may cost <$0.01) still move the metric.
+const usdToMicrocents = 1_000_000.0
 const usdRoundHalf = 0.5
 
 // ApprovalNotifier is called when a workflow needs user approval.
@@ -189,6 +191,9 @@ func WithEventLog(el *EventLog) EngineOption {
 // Map is shallow-copied — caller can mutate after.
 func WithCostModel(model map[string]ModelPrice) EngineOption {
 	return func(e *Engine) {
+		if model == nil {
+			return // no-op: keep existing cost model (e.g. DefaultCostModel)
+		}
 		e.costModel = make(map[string]ModelPrice, len(model))
 		for k, v := range model {
 			e.costModel[k] = v
@@ -349,9 +354,11 @@ func (e *Engine) recordStepCost(wf *Workflow, c StepCost) error {
 	if m := e.getMetrics(); m != nil {
 		m.WorkflowTokensInputTotal.Add(c.InputTokens)
 		m.WorkflowTokensOutputTotal.Add(c.OutputTokens)
-		// Store dollars-as-cents (USD * 100, rounded) since atomic.Float64 doesn't exist.
+		// Store dollars as micro-cents (USD * 1e6, rounded) since
+		// atomic.Float64 doesn't exist. Microcents preserve sub-cent
+		// precision so cheap-model calls still move the metric.
 		if c.USDEstimate > 0 {
-			m.WorkflowCostUSDTotal.Add(uint64(c.USDEstimate*usdToCents + usdRoundHalf))
+			m.WorkflowCostUSDTotal.Add(uint64(c.USDEstimate*usdToMicrocents + usdRoundHalf))
 		}
 		if c.Kind == StepImage {
 			m.WorkflowImagesRenderedTotal.Add(1)
@@ -362,7 +369,7 @@ func (e *Engine) recordStepCost(wf *Workflow, c StepCost) error {
 		if m := e.getMetrics(); m != nil {
 			m.WorkflowBudgetExceededTotal.Add(1)
 		}
-		return fmt.Errorf("%w: spent $%.4f, limit $%.4f", ErrBudgetExceeded, wf.Cost.USDEstimate, e.budgetUSD)
+		return fmt.Errorf("%w: at step %s, spent $%.4f, limit $%.4f", ErrBudgetExceeded, c.StepID, wf.Cost.USDEstimate, e.budgetUSD)
 	}
 	return nil
 }

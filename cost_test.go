@@ -22,8 +22,10 @@ func TestEstimateUSD(t *testing.T) {
 		want         float64
 	}{
 		{"haiku", "claude-haiku-4-5", 1000, 1000, 0.001 + 0.005},
+		{"haiku-dated", "claude-haiku-4-5-20251001", 1000, 1000, 0.001 + 0.005},
 		{"sonnet", "claude-sonnet-4-6", 1000, 1000, 0.003 + 0.015},
 		{"opus47", "claude-opus-4-7", 1000, 1000, 0.015 + 0.075},
+		{"opus46", "claude-opus-4-6", 1000, 1000, 0.015 + 0.075},
 		{"flash", "gemini-2.5-flash", 1000, 1000, 0.0001 + 0.0004},
 		{"flash-lite", "gemini-2.5-flash-lite", 1000, 1000, 0.00005 + 0.0002},
 		{"pro", "gemini-2.5-pro", 1000, 1000, 0.00125 + 0.005},
@@ -268,18 +270,10 @@ func TestCostMetrics_Increment(t *testing.T) {
 	if m.WorkflowTokensOutputTotal.Load() != 500 {
 		t.Errorf("WorkflowTokensOutputTotal = %d, want 500", m.WorkflowTokensOutputTotal.Load())
 	}
-	// 0.0035 USD = 0 cents (rounded down from 0.35). Use bigger numbers for cents check.
-	provider.response = &LLMResponse{
-		Content: "more", Model: "claude-opus-4-7",
-		InputTokens: 1000, OutputTokens: 1000, // 0.090 → 9 cents
-	}
-	step2 := &Step{ID: "s2", Kind: StepLLM, Config: map[string]any{"prompt": "y"}}
-	wf2 := NewWorkflow("wf-m2", "n", "o", nil)
-	if err := ex.Execute(context.Background(), step2, wf2); err != nil {
-		t.Fatalf("Execute2: %v", err)
-	}
-	if m.WorkflowCostUSDTotal.Load() < 9 {
-		t.Errorf("WorkflowCostUSDTotal cents = %d, want >= 9", m.WorkflowCostUSDTotal.Load())
+	// 0.0035 USD = 3500 microcents (USD * 1e6). Cheap-model precision is
+	// preserved by the microcents unit — no need for a bigger workaround.
+	if got := m.WorkflowCostUSDTotal.Load(); got != 3500 {
+		t.Errorf("WorkflowCostUSDTotal microcents = %d, want 3500", got)
 	}
 
 	// Image step → ImagesRendered counter.

@@ -36,8 +36,10 @@ type Metrics struct {
 	VisionCallsFailed      atomic.Int64
 	VisionTokensInput      atomic.Int64
 	VisionTokensOutput     atomic.Int64
-	// WorkflowCostUSDTotal stores USD as cents (USD * 100, rounded) because
-	// atomic.Float64 does not exist. Divide by 100 to get dollars.
+	// WorkflowCostUSDTotal stores USD as micro-cents (USD * 1,000,000,
+	// rounded) because atomic.Float64 does not exist. Microcents preserve
+	// sub-cent precision so cheap-model calls (Haiku/Flash) still move
+	// the metric. Divide by 1,000,000 for USD.
 	WorkflowCostUSDTotal        atomic.Uint64
 	WorkflowTokensInputTotal    atomic.Int64
 	WorkflowTokensOutputTotal   atomic.Int64
@@ -84,7 +86,7 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Vision calls failed: %d", m.VisionCallsFailed.Load()))
 	lines = append(lines, fmt.Sprintf("  Vision tokens input: %d", m.VisionTokensInput.Load()))
 	lines = append(lines, fmt.Sprintf("  Vision tokens output: %d", m.VisionTokensOutput.Load()))
-	lines = append(lines, fmt.Sprintf("  Workflow cost USD total (cents): %d", m.WorkflowCostUSDTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow cost USD total (microcents): %d", m.WorkflowCostUSDTotal.Load()))
 	lines = append(lines, fmt.Sprintf("  Workflow tokens input total: %d", m.WorkflowTokensInputTotal.Load()))
 	lines = append(lines, fmt.Sprintf("  Workflow tokens output total: %d", m.WorkflowTokensOutputTotal.Load()))
 	lines = append(lines, fmt.Sprintf("  Workflow images rendered total: %d", m.WorkflowImagesRenderedTotal.Load()))
