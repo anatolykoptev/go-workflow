@@ -1,5 +1,7 @@
 package workflow
 
+import "time"
+
 // WorkflowState represents the lifecycle state of a workflow.
 type WorkflowState string
 
@@ -42,6 +44,8 @@ const (
 	StepBranchAll StepKind = "branchall"
 	StepSuspend   StepKind = "suspend"
 	StepNoop      StepKind = "noop"
+	StepImage     StepKind = "image"
+	StepVision    StepKind = "vision"
 )
 
 // OnError strategy constants for step error handling.
@@ -98,6 +102,14 @@ var stepKindAliases = map[StepKind]StepKind{
 	"confirm":  StepApproval,
 	"prompt":   StepLLM,
 	"delegate": StepA2A,
+
+	// Image rendering aliases — common naming variants for the image primitive.
+	"render_image": StepImage,
+	"image_render": StepImage,
+
+	// Vision (multimodal LLM) aliases — common naming variants.
+	"llm_vision":  StepVision,
+	"multimodal":  StepVision,
 }
 
 // NormalizeStepKind resolves a step kind alias to the canonical Vaelor step kind.
@@ -112,7 +124,7 @@ func NormalizeStepKind(kind StepKind) StepKind {
 // IsValidStepKind returns true if the kind is a known canonical or alias step kind.
 func IsValidStepKind(kind StepKind) bool {
 	switch kind {
-	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A, StepForEach, StepBranchAll, StepSuspend, StepNoop:
+	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A, StepForEach, StepBranchAll, StepSuspend, StepNoop, StepImage, StepVision:
 		return true
 	}
 	_, isAlias := stepKindAliases[kind]
@@ -140,6 +152,36 @@ type Workflow struct {
 	InterruptAfter  []string               `json:"interrupt_after,omitempty"`  // pause after these step IDs
 	CreatedAt       int64                  `json:"created_at_ms"`
 	UpdatedAt       int64                  `json:"updated_at_ms"`
+	// Cost is the running aggregate of resource consumption (tokens, USD, image
+	// bytes) for cost-bearing steps in this workflow. Nil when no cost-bearing
+	// step has executed yet. Updated by recordStepCost after every successful
+	// LLM, vision, or image step.
+	Cost *WorkflowCost `json:"cost,omitempty"`
+}
+
+// WorkflowCost is the running aggregate of an execution's resource consumption.
+// Updated after every cost-bearing step (LLM calls, vision calls, image renders).
+// Returned with the workflow result so consumers can budget, log, and bill.
+type WorkflowCost struct {
+	InputTokens    int64               `json:"input_tokens"`
+	OutputTokens   int64               `json:"output_tokens"`
+	USDEstimate    float64             `json:"usd_estimate"`
+	ImagesRendered int64               `json:"images_rendered"`
+	BytesRendered  int64               `json:"bytes_rendered"`
+	BySteps        map[string]StepCost `json:"by_steps,omitempty"` // step ID → cost
+	UpdatedAt      time.Time           `json:"updated_at"`
+}
+
+// StepCost is the resource consumption of a single step execution.
+type StepCost struct {
+	StepID       string   `json:"step_id"`
+	Kind         StepKind `json:"kind"`
+	Model        string   `json:"model,omitempty"` // empty for non-LLM steps
+	InputTokens  int64    `json:"input_tokens,omitempty"`
+	OutputTokens int64    `json:"output_tokens,omitempty"`
+	USDEstimate  float64  `json:"usd_estimate,omitempty"`
+	Bytes        int64    `json:"bytes,omitempty"` // for image steps
+	DurationMS   int64    `json:"duration_ms,omitempty"`
 }
 
 // Step is a single unit of work within a workflow.

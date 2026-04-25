@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anatolykoptev/go-kit/llm"
 )
@@ -21,12 +22,13 @@ type StreamCallback func(workflowID, stepID, delta string)
 // Supports skill references: {"skill": "name", "input": "..."}.
 // Supports multi-turn tool calling when tools are configured and a ToolRunner is set.
 type LLMExecutor struct {
-	provider   LLMProvider   // legacy interface
-	client     *llm.Client   // go-kit client (preferred)
+	provider   LLMProvider // legacy interface
+	client     *llm.Client // go-kit client (preferred)
 	skills     SkillResolver
 	metrics    *Metrics
 	streamCB   StreamCallback
 	toolRunner ToolRunner
+	engine     *Engine // back-reference for cost recording (set by NewEngine)
 }
 
 // NewLLMExecutor creates an LLMExecutor using the legacy LLMProvider interface.
@@ -69,6 +71,7 @@ func (e *LLMExecutor) executeProvider(ctx context.Context, step *Step, wf *Workf
 	}
 	messages := []LLMMessage{{Role: "user", Content: prompt}}
 
+	start := time.Now()
 	resp, err := e.provider.Chat(ctx, messages, model)
 	if err != nil {
 		return fmt.Errorf("llm: %w", err)
@@ -77,6 +80,22 @@ func (e *LLMExecutor) executeProvider(ctx context.Context, step *Step, wf *Workf
 	step.Result = resp.Content
 	wf.Context[step.ID] = resp.Content
 	recordUsage(step.ID, wf, e.metrics, resp.InputTokens, resp.OutputTokens, resp.Model)
+	if e.engine != nil {
+		respModel := resp.Model
+		if respModel == "" {
+			respModel = model
+		}
+		if costErr := e.engine.recordStepCost(wf, StepCost{
+			StepID:       step.ID,
+			Kind:         StepLLM,
+			Model:        respModel,
+			InputTokens:  int64(resp.InputTokens),
+			OutputTokens: int64(resp.OutputTokens),
+			DurationMS:   time.Since(start).Milliseconds(),
+		}); costErr != nil {
+			return costErr
+		}
+	}
 	return nil
 }
 
@@ -96,6 +115,7 @@ func (e *LLMExecutor) executeClient(ctx context.Context, step *Step, wf *Workflo
 		return e.executeStream(ctx, step, wf, msgs)
 	}
 
+	start := time.Now()
 	resp, err := e.client.Chat(ctx, msgs)
 	if err != nil {
 		return fmt.Errorf("llm: %w", err)
@@ -105,6 +125,19 @@ func (e *LLMExecutor) executeClient(ctx context.Context, step *Step, wf *Workflo
 	wf.Context[step.ID] = resp.Content
 	if resp.Usage != nil {
 		recordUsage(step.ID, wf, e.metrics, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, "")
+	}
+	if e.engine != nil && resp.Usage != nil {
+		model, _ := step.Config["model"].(string)
+		if costErr := e.engine.recordStepCost(wf, StepCost{
+			StepID:       step.ID,
+			Kind:         StepLLM,
+			Model:        model,
+			InputTokens:  int64(resp.Usage.PromptTokens),
+			OutputTokens: int64(resp.Usage.CompletionTokens),
+			DurationMS:   time.Since(start).Milliseconds(),
+		}); costErr != nil {
+			return costErr
+		}
 	}
 	return nil
 }
@@ -135,6 +168,18 @@ func (e *LLMExecutor) executeStream(ctx context.Context, step *Step, wf *Workflo
 	wf.Context[step.ID] = content
 	if u := stream.Usage(); u != nil {
 		recordUsage(step.ID, wf, e.metrics, u.PromptTokens, u.CompletionTokens, "")
+		if e.engine != nil {
+			model, _ := step.Config["model"].(string)
+			if costErr := e.engine.recordStepCost(wf, StepCost{
+				StepID:       step.ID,
+				Kind:         StepLLM,
+				Model:        model,
+				InputTokens:  int64(u.PromptTokens),
+				OutputTokens: int64(u.CompletionTokens),
+			}); costErr != nil {
+				return costErr
+			}
+		}
 	}
 	return nil
 }

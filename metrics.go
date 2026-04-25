@@ -28,6 +28,23 @@ type Metrics struct {
 	SchedulerJobsFailed    atomic.Int64
 	LLMTokensInput         atomic.Int64
 	LLMTokensOutput        atomic.Int64
+	ImageRendersSuccess    atomic.Int64
+	ImageRendersFailed     atomic.Int64
+	ImageBytesTotal        atomic.Int64
+	ImageDurationMSTotal   atomic.Int64
+	VisionCallsSuccess     atomic.Int64
+	VisionCallsFailed      atomic.Int64
+	VisionTokensInput      atomic.Int64
+	VisionTokensOutput     atomic.Int64
+	// WorkflowCostUSDTotal stores USD as micro-cents (USD * 1,000,000,
+	// rounded) because atomic.Float64 does not exist. Microcents preserve
+	// sub-cent precision so cheap-model calls (Haiku/Flash) still move
+	// the metric. Divide by 1,000,000 for USD.
+	WorkflowCostUSDTotal        atomic.Uint64
+	WorkflowTokensInputTotal    atomic.Int64
+	WorkflowTokensOutputTotal   atomic.Int64
+	WorkflowImagesRenderedTotal atomic.Int64
+	WorkflowBudgetExceededTotal atomic.Int64
 }
 
 // NewMetrics creates a fresh Metrics instance for dependency injection.
@@ -61,6 +78,19 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Scheduler jobs failed: %d", m.SchedulerJobsFailed.Load()))
 	lines = append(lines, fmt.Sprintf("  LLM tokens input: %d", m.LLMTokensInput.Load()))
 	lines = append(lines, fmt.Sprintf("  LLM tokens output: %d", m.LLMTokensOutput.Load()))
+	lines = append(lines, fmt.Sprintf("  Image renders success: %d", m.ImageRendersSuccess.Load()))
+	lines = append(lines, fmt.Sprintf("  Image renders failed: %d", m.ImageRendersFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  Image bytes total: %d", m.ImageBytesTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Image duration ms total: %d", m.ImageDurationMSTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision calls success: %d", m.VisionCallsSuccess.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision calls failed: %d", m.VisionCallsFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision tokens input: %d", m.VisionTokensInput.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision tokens output: %d", m.VisionTokensOutput.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow cost USD total (microcents): %d", m.WorkflowCostUSDTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow tokens input total: %d", m.WorkflowTokensInputTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow tokens output total: %d", m.WorkflowTokensOutputTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow images rendered total: %d", m.WorkflowImagesRenderedTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow budget exceeded total: %d", m.WorkflowBudgetExceededTotal.Load()))
 	return strings.Join(lines, "\n")
 }
 
@@ -86,4 +116,17 @@ func (m *Metrics) Reset() {
 	m.SchedulerJobsFailed.Store(0)
 	m.LLMTokensInput.Store(0)
 	m.LLMTokensOutput.Store(0)
+	m.ImageRendersSuccess.Store(0)
+	m.ImageRendersFailed.Store(0)
+	m.ImageBytesTotal.Store(0)
+	m.ImageDurationMSTotal.Store(0)
+	m.VisionCallsSuccess.Store(0)
+	m.VisionCallsFailed.Store(0)
+	m.VisionTokensInput.Store(0)
+	m.VisionTokensOutput.Store(0)
+	m.WorkflowCostUSDTotal.Store(0)
+	m.WorkflowTokensInputTotal.Store(0)
+	m.WorkflowTokensOutputTotal.Store(0)
+	m.WorkflowImagesRenderedTotal.Store(0)
+	m.WorkflowBudgetExceededTotal.Store(0)
 }

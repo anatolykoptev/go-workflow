@@ -203,3 +203,24 @@ func (w *Workflow) GetStep(stepID string) *Step {
 func (w *Workflow) IsTerminal() bool {
 	return w.State == StateCompleted || w.State == StateFailed || w.State == StateCancelled
 }
+
+// AddCost merges a single step's cost into the workflow aggregate, creating the
+// aggregate map on first call. Safe to call from inside step executors after
+// they record their own StepCost.
+func (w *Workflow) AddCost(c StepCost) {
+	if w.Cost == nil {
+		w.Cost = &WorkflowCost{BySteps: make(map[string]StepCost)}
+	}
+	if w.Cost.BySteps == nil {
+		w.Cost.BySteps = make(map[string]StepCost)
+	}
+	w.Cost.InputTokens += c.InputTokens
+	w.Cost.OutputTokens += c.OutputTokens
+	w.Cost.USDEstimate += c.USDEstimate
+	if c.Kind == StepImage {
+		w.Cost.ImagesRendered++
+	}
+	w.Cost.BytesRendered += c.Bytes
+	w.Cost.BySteps[c.StepID] = c
+	w.Cost.UpdatedAt = time.Now()
+}

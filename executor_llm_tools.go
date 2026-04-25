@@ -34,6 +34,18 @@ func (e *LLMExecutor) executeToolLoop(
 				wf.Context[step.ID+"_tool_calls"] = toolLog
 			}
 			recordUsage(step.ID, wf, e.metrics, totalUsage.PromptTokens, totalUsage.CompletionTokens, "")
+			if e.engine != nil {
+				model, _ := step.Config["model"].(string)
+				if costErr := e.engine.recordStepCost(wf, StepCost{
+					StepID:       step.ID,
+					Kind:         StepLLM,
+					Model:        model,
+					InputTokens:  int64(totalUsage.PromptTokens),
+					OutputTokens: int64(totalUsage.CompletionTokens),
+				}); costErr != nil {
+					return costErr
+				}
+			}
 			return nil
 		}
 

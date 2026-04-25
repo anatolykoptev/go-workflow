@@ -1,13 +1,13 @@
 # go-workflow
 
-Standalone DAG workflow engine for Go. 13 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
+Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.8.1** | 291 tests | Go 1.26 | [MIT License](LICENSE)
+**v0.10.0** | 407 tests | Go 1.26 | [MIT License](LICENSE)
 
 ## Features
 
 - **DAG execution** — steps run in parallel when dependencies allow
-- **13 step types** — tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop
+- **15 step types** — adds `vision` for multimodal LLM calls with image inputs (companion to the new `image` step), via optional `VisionCapable` provider interface. Full list: tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop, image, vision
 - **MCP integration** — `WithMCPServers()` connects to any MCP server, auto-discovers tools
 - **Templates** — parameterized workflow definitions with `{{variable}}` substitution, loaded from JSON files
 - **Approval flow** — pause workflow, await human/AI approval, resume or reject
@@ -21,6 +21,7 @@ Standalone DAG workflow engine for Go. 13 step types, MCP server integration, pl
 - **n8n import** — convert n8n workflow JSON to native templates
 - **Scheduler + Cron** — time-based workflow triggers
 - **Metrics** — atomic counters for workflows, steps, agents, hooks, triggers
+- **Cost tracking** — every LLM and image step contributes to `Workflow.Cost` (tokens, USD, image bytes). Optional `WithBudget(maxUSD)` aborts overrun workflows with `ErrBudgetExceeded`.
 
 ## Quick Start
 
@@ -146,6 +147,20 @@ engine.ResumeAsync(ctx, "wf-123")
 | `branchall` | `BranchAllExecutor` | Run all branches in parallel |
 | `suspend` | `SuspendExecutor` | Suspend with TTL |
 | `noop` | `NoopExecutor` | Join point, completes immediately |
+| `image` | `ImageExecutor` | Render HTML to PNG/JPEG/WebP/SVG via pluggable `ImageRenderer` |
+| `vision` | `VisionExecutor` | Multimodal LLM call with image attachments (`VisionCapable` provider) |
+
+## Cost tracking
+
+Every LLM call (`StepLLM`, `StepVision`) and every image render (`StepImage`) updates `Workflow.Cost`:
+
+```go
+wf, _ := engine.RunToCompletion(ctx, wf)
+fmt.Printf("Total: %d in / %d out tokens, $%.4f, %d images\n",
+    wf.Cost.InputTokens, wf.Cost.OutputTokens, wf.Cost.USDEstimate, wf.Cost.ImagesRendered)
+```
+
+Optional ceiling: `workflow.WithBudget(0.50)` aborts when the running total exceeds $0.50, surfacing `ErrBudgetExceeded`. Pricing comes from `DefaultCostModel`; override with `WithCostModel(custom)`.
 
 ## Retry & Timeout
 
