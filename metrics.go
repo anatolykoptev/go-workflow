@@ -36,6 +36,13 @@ type Metrics struct {
 	VisionCallsFailed      atomic.Int64
 	VisionTokensInput      atomic.Int64
 	VisionTokensOutput     atomic.Int64
+	// WorkflowCostUSDTotal stores USD as cents (USD * 100, rounded) because
+	// atomic.Float64 does not exist. Divide by 100 to get dollars.
+	WorkflowCostUSDTotal        atomic.Uint64
+	WorkflowTokensInputTotal    atomic.Int64
+	WorkflowTokensOutputTotal   atomic.Int64
+	WorkflowImagesRenderedTotal atomic.Int64
+	WorkflowBudgetExceededTotal atomic.Int64
 }
 
 // NewMetrics creates a fresh Metrics instance for dependency injection.
@@ -77,6 +84,11 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Vision calls failed: %d", m.VisionCallsFailed.Load()))
 	lines = append(lines, fmt.Sprintf("  Vision tokens input: %d", m.VisionTokensInput.Load()))
 	lines = append(lines, fmt.Sprintf("  Vision tokens output: %d", m.VisionTokensOutput.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow cost USD total (cents): %d", m.WorkflowCostUSDTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow tokens input total: %d", m.WorkflowTokensInputTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow tokens output total: %d", m.WorkflowTokensOutputTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow images rendered total: %d", m.WorkflowImagesRenderedTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Workflow budget exceeded total: %d", m.WorkflowBudgetExceededTotal.Load()))
 	return strings.Join(lines, "\n")
 }
 
@@ -110,4 +122,9 @@ func (m *Metrics) Reset() {
 	m.VisionCallsFailed.Store(0)
 	m.VisionTokensInput.Store(0)
 	m.VisionTokensOutput.Store(0)
+	m.WorkflowCostUSDTotal.Store(0)
+	m.WorkflowTokensInputTotal.Store(0)
+	m.WorkflowTokensOutputTotal.Store(0)
+	m.WorkflowImagesRenderedTotal.Store(0)
+	m.WorkflowBudgetExceededTotal.Store(0)
 }

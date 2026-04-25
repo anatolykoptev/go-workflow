@@ -75,6 +75,7 @@ const (
 type ImageExecutor struct {
 	renderer ImageRenderer
 	metrics  *Metrics
+	engine   *Engine // back-reference for cost recording (set by NewEngine)
 	// workspaceDir, when set, makes the executor persist rendered bytes to a file
 	// under workspaceDir/<workflow_id>/<step_id>.<ext> and populate Result.Path.
 	// When empty, only in-memory bytes are returned via the result map.
@@ -139,6 +140,17 @@ func (e *ImageExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) e
 	wf.Context[step.ID] = out
 
 	e.recordSuccess(res.SizeBytes, res.DurationMS)
+
+	if e.engine != nil {
+		if costErr := e.engine.recordStepCost(wf, StepCost{
+			StepID:     step.ID,
+			Kind:       StepImage,
+			Bytes:      res.SizeBytes,
+			DurationMS: res.DurationMS,
+		}); costErr != nil {
+			return costErr
+		}
+	}
 	return nil
 }
 

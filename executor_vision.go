@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // VisionExecutor implements StepExecutor for StepVision. It calls a multimodal
@@ -36,6 +37,7 @@ const (
 type VisionExecutor struct {
 	provider LLMProvider
 	metrics  *Metrics
+	engine   *Engine // back-reference for cost recording (set by NewEngine)
 }
 
 // NewVisionExecutor builds a VisionExecutor wired to the given provider + metrics.
@@ -84,6 +86,7 @@ func (e *VisionExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) 
 			"reason", "provider does not implement VisionCapable")
 	}
 
+	start := time.Now()
 	resp, err := e.provider.Chat(ctx, []LLMMessage{msg}, model)
 	if err != nil {
 		e.recordFailure()
@@ -102,6 +105,20 @@ func (e *VisionExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) 
 	tokensIn, _ := out["tokens_in"].(int)
 	tokensOut, _ := out["tokens_out"].(int)
 	e.recordSuccess(int64(tokensIn), int64(tokensOut))
+
+	if e.engine != nil {
+		respModel, _ := out["model"].(string)
+		if costErr := e.engine.recordStepCost(wf, StepCost{
+			StepID:       step.ID,
+			Kind:         StepVision,
+			Model:        respModel,
+			InputTokens:  int64(tokensIn),
+			OutputTokens: int64(tokensOut),
+			DurationMS:   time.Since(start).Milliseconds(),
+		}); costErr != nil {
+			return costErr
+		}
+	}
 	return nil
 }
 

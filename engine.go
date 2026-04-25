@@ -1,10 +1,21 @@
 package workflow
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/anatolykoptev/go-kit/llm"
 )
+
+// ErrBudgetExceeded is returned by cost-bearing executors when a workflow's
+// running USD total exceeds the engine's configured budget. Workflows that
+// trigger this error fail; partial cost is preserved on Workflow.Cost.
+var ErrBudgetExceeded = errors.New("workflow budget exceeded")
+
+// usdToCents scales a dollars float to integer cents with rounding.
+const usdToCents = 100.0
+const usdRoundHalf = 0.5
 
 // ApprovalNotifier is called when a workflow needs user approval.
 type ApprovalNotifier func(wf *Workflow, step *Step)
@@ -33,6 +44,8 @@ type Engine struct {
 	scheduler          *Scheduler
 	triggers           *TriggerService
 	eventLog           *EventLog
+	costModel          map[string]ModelPrice
+	budgetUSD          float64 // 0 = no budget
 }
 
 // EngineOption configures an Engine.
@@ -171,6 +184,27 @@ func WithEventLog(el *EventLog) EngineOption {
 	return func(e *Engine) { e.eventLog = el }
 }
 
+// WithCostModel overrides the default per-model USD pricing table.
+// Useful to add new models or apply discounted contract pricing.
+// Map is shallow-copied — caller can mutate after.
+func WithCostModel(model map[string]ModelPrice) EngineOption {
+	return func(e *Engine) {
+		e.costModel = make(map[string]ModelPrice, len(model))
+		for k, v := range model {
+			e.costModel[k] = v
+		}
+	}
+}
+
+// WithBudget sets a maximum USD ceiling per workflow. When exceeded, the
+// next cost-bearing step returns ErrBudgetExceeded and the workflow fails.
+// 0 (default) means unlimited.
+func WithBudget(maxUSD float64) EngineOption {
+	return func(e *Engine) {
+		e.budgetUSD = maxUSD
+	}
+}
+
 func WithStepListener(l *StepListener) EngineOption {
 	return func(e *Engine) { e.listener = l }
 }
@@ -205,9 +239,10 @@ func WithImageWorkspace(dir string) EngineOption {
 // NewEngine creates a workflow engine with functional options.
 func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	e := &Engine{
-		store:   store,
-		metrics: GlobalMetrics,
-		logger:  slog.Default(),
+		store:     store,
+		metrics:   GlobalMetrics,
+		logger:    slog.Default(),
+		costModel: DefaultCostModel,
 		executors: map[StepKind]StepExecutor{
 			StepCondition: NewConditionExecutor(),
 			StepApproval:  NewApprovalExecutor(),
@@ -231,9 +266,14 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	}
 	if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
 		ex.metrics = e.metrics
+		ex.engine = e
 	}
 	if ex, ok := e.executors[StepVision].(*VisionExecutor); ok {
 		ex.metrics = e.metrics
+		ex.engine = e
+	}
+	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+		ex.engine = e
 	}
 
 	// Wire ToolRunner into LLMExecutor for tool calling
@@ -294,3 +334,35 @@ func (e *Engine) log() *slog.Logger {
 }
 
 func (e *Engine) Store() *WorkflowStore { return e.store }
+
+// recordStepCost is called by executors that bear cost. It computes USD,
+// merges into the workflow's WorkflowCost aggregate, increments global
+// metrics, and returns ErrBudgetExceeded if the new total exceeds the
+// engine's budget. Safe to call when wf is nil (no-op).
+func (e *Engine) recordStepCost(wf *Workflow, c StepCost) error {
+	if wf == nil {
+		return nil
+	}
+	c.USDEstimate = EstimateUSD(c.Model, c.InputTokens, c.OutputTokens, e.costModel)
+	wf.AddCost(c)
+
+	if m := e.getMetrics(); m != nil {
+		m.WorkflowTokensInputTotal.Add(c.InputTokens)
+		m.WorkflowTokensOutputTotal.Add(c.OutputTokens)
+		// Store dollars-as-cents (USD * 100, rounded) since atomic.Float64 doesn't exist.
+		if c.USDEstimate > 0 {
+			m.WorkflowCostUSDTotal.Add(uint64(c.USDEstimate*usdToCents + usdRoundHalf))
+		}
+		if c.Kind == StepImage {
+			m.WorkflowImagesRenderedTotal.Add(1)
+		}
+	}
+
+	if e.budgetUSD > 0 && wf.Cost != nil && wf.Cost.USDEstimate > e.budgetUSD {
+		if m := e.getMetrics(); m != nil {
+			m.WorkflowBudgetExceededTotal.Add(1)
+		}
+		return fmt.Errorf("%w: spent $%.4f, limit $%.4f", ErrBudgetExceeded, wf.Cost.USDEstimate, e.budgetUSD)
+	}
+	return nil
+}
