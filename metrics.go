@@ -28,6 +28,10 @@ type Metrics struct {
 	SchedulerJobsFailed    atomic.Int64
 	LLMTokensInput         atomic.Int64
 	LLMTokensOutput        atomic.Int64
+	ImageRendersSuccess    atomic.Int64
+	ImageRendersFailed     atomic.Int64
+	ImageBytesTotal        atomic.Int64
+	ImageDurationMSTotal   atomic.Int64
 }
 
 // NewMetrics creates a fresh Metrics instance for dependency injection.
@@ -61,6 +65,10 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Scheduler jobs failed: %d", m.SchedulerJobsFailed.Load()))
 	lines = append(lines, fmt.Sprintf("  LLM tokens input: %d", m.LLMTokensInput.Load()))
 	lines = append(lines, fmt.Sprintf("  LLM tokens output: %d", m.LLMTokensOutput.Load()))
+	lines = append(lines, fmt.Sprintf("  Image renders success: %d", m.ImageRendersSuccess.Load()))
+	lines = append(lines, fmt.Sprintf("  Image renders failed: %d", m.ImageRendersFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  Image bytes total: %d", m.ImageBytesTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Image duration ms total: %d", m.ImageDurationMSTotal.Load()))
 	return strings.Join(lines, "\n")
 }
 
@@ -86,4 +94,8 @@ func (m *Metrics) Reset() {
 	m.SchedulerJobsFailed.Store(0)
 	m.LLMTokensInput.Store(0)
 	m.LLMTokensOutput.Store(0)
+	m.ImageRendersSuccess.Store(0)
+	m.ImageRendersFailed.Store(0)
+	m.ImageBytesTotal.Store(0)
+	m.ImageDurationMSTotal.Store(0)
 }

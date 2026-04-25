@@ -7,7 +7,7 @@ Standalone DAG workflow engine for Go. 13 step types, MCP server integration, pl
 ## Features
 
 - **DAG execution** — steps run in parallel when dependencies allow
-- **13 step types** — tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop
+- **14 step types** (was 13) — adds `image` for declarative HTML→image rendering via pluggable `ImageRenderer`. Full list: tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop, image
 - **MCP integration** — `WithMCPServers()` connects to any MCP server, auto-discovers tools
 - **Templates** — parameterized workflow definitions with `{{variable}}` substitution, loaded from JSON files
 - **Approval flow** — pause workflow, await human/AI approval, resume or reject

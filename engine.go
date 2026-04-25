@@ -155,6 +155,33 @@ func WithStepListener(l *StepListener) EngineOption {
 	return func(e *Engine) { e.listener = l }
 }
 
+// WithImageRenderer registers a backend renderer for the StepImage primitive.
+// When set, the engine accepts steps of kind "image". Without it, image steps
+// are rejected at validation time with an "unknown step kind" error.
+//
+// Apply this option BEFORE WithImageWorkspace — the workspace option mutates
+// the executor created here, so it must already exist.
+func WithImageRenderer(r ImageRenderer) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepImage] = NewImageExecutor(r, e.metrics)
+	}
+}
+
+// WithImageWorkspace makes the image executor persist rendered bytes to disk
+// under the given directory. Each rendered step writes
+// <workspaceDir>/<workflow_id>/<step_id>.<ext> and the path appears in the
+// step's result map for downstream reference.
+//
+// Must be applied AFTER WithImageRenderer; it is a no-op when the image
+// executor has not been registered.
+func WithImageWorkspace(dir string) EngineOption {
+	return func(e *Engine) {
+		if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
+			ex.workspaceDir = dir
+		}
+	}
+}
+
 // NewEngine creates a workflow engine with functional options.
 func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	e := &Engine{
@@ -180,6 +207,9 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		ex.metrics = e.metrics
 	}
 	if ex, ok := e.executors[StepA2A].(*A2AExecutor); ok {
+		ex.metrics = e.metrics
+	}
+	if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
 		ex.metrics = e.metrics
 	}
 
