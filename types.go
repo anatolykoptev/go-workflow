@@ -43,6 +43,7 @@ const (
 	StepSuspend   StepKind = "suspend"
 	StepNoop      StepKind = "noop"
 	StepImage     StepKind = "image"
+	StepVision    StepKind = "vision"
 )
 
 // OnError strategy constants for step error handling.
@@ -103,6 +104,10 @@ var stepKindAliases = map[StepKind]StepKind{
 	// Image rendering aliases — common naming variants for the image primitive.
 	"render_image": StepImage,
 	"image_render": StepImage,
+
+	// Vision (multimodal LLM) aliases — common naming variants.
+	"llm_vision":  StepVision,
+	"multimodal":  StepVision,
 }
 
 // NormalizeStepKind resolves a step kind alias to the canonical Vaelor step kind.
@@ -117,7 +122,7 @@ func NormalizeStepKind(kind StepKind) StepKind {
 // IsValidStepKind returns true if the kind is a known canonical or alias step kind.
 func IsValidStepKind(kind StepKind) bool {
 	switch kind {
-	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A, StepForEach, StepBranchAll, StepSuspend, StepNoop, StepImage:
+	case StepTool, StepLLM, StepApproval, StepCondition, StepMessage, StepWorkflow, StepAgent, StepTransform, StepA2A, StepForEach, StepBranchAll, StepSuspend, StepNoop, StepImage, StepVision:
 		return true
 	}
 	_, isAlias := stepKindAliases[kind]

@@ -32,6 +32,10 @@ type Metrics struct {
 	ImageRendersFailed     atomic.Int64
 	ImageBytesTotal        atomic.Int64
 	ImageDurationMSTotal   atomic.Int64
+	VisionCallsSuccess     atomic.Int64
+	VisionCallsFailed      atomic.Int64
+	VisionTokensInput      atomic.Int64
+	VisionTokensOutput     atomic.Int64
 }
 
 // NewMetrics creates a fresh Metrics instance for dependency injection.
@@ -69,6 +73,10 @@ func (m *Metrics) Summary() string {
 	lines = append(lines, fmt.Sprintf("  Image renders failed: %d", m.ImageRendersFailed.Load()))
 	lines = append(lines, fmt.Sprintf("  Image bytes total: %d", m.ImageBytesTotal.Load()))
 	lines = append(lines, fmt.Sprintf("  Image duration ms total: %d", m.ImageDurationMSTotal.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision calls success: %d", m.VisionCallsSuccess.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision calls failed: %d", m.VisionCallsFailed.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision tokens input: %d", m.VisionTokensInput.Load()))
+	lines = append(lines, fmt.Sprintf("  Vision tokens output: %d", m.VisionTokensOutput.Load()))
 	return strings.Join(lines, "\n")
 }
 
@@ -98,4 +106,8 @@ func (m *Metrics) Reset() {
 	m.ImageRendersFailed.Store(0)
 	m.ImageBytesTotal.Store(0)
 	m.ImageDurationMSTotal.Store(0)
+	m.VisionCallsSuccess.Store(0)
+	m.VisionCallsFailed.Store(0)
+	m.VisionTokensInput.Store(0)
+	m.VisionTokensOutput.Store(0)
 }

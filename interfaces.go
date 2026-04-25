@@ -38,9 +38,32 @@ type LLMProvider interface {
 }
 
 // LLMMessage is a single message in a conversation.
+//
+// Images is an optional list of inline image attachments for multimodal
+// providers. Text-only providers ignore this field; multimodal providers
+// (Anthropic Claude, OpenAI GPT-4V, etc.) consume the bytes alongside the
+// Content text. The field is additive — existing callers that leave it nil
+// continue to behave as before.
 type LLMMessage struct {
 	Role    string
 	Content string
+	Images  []LLMImageContent
+}
+
+// LLMImageContent is an inline image payload attached to an LLMMessage.
+// MIMEType examples: "image/png", "image/jpeg", "image/webp".
+type LLMImageContent struct {
+	Bytes    []byte
+	MIMEType string
+}
+
+// VisionCapable is implemented by LLMProvider implementations that support
+// multimodal input (text + images). The StepVision executor probes for this
+// interface; providers that do not implement it (or return false) cause the
+// vision step to log a warning and fall back to a text-only call with the
+// prompt alone.
+type VisionCapable interface {
+	SupportsVision() bool
 }
 
 // LLMResponse is the model's reply with optional token usage data.

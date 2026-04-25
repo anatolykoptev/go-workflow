@@ -55,6 +55,26 @@ func WithMessagePublisher(m MessagePublisher) EngineOption {
 func WithLLMProvider(p LLMProvider) EngineOption {
 	return func(e *Engine) {
 		e.executors[StepLLM] = NewLLMExecutor(p, e.metrics)
+		// Auto-wire vision executor when the same provider declares multimodal
+		// support. A separate vision-only provider can still be registered via
+		// WithVisionProvider, which overrides this default.
+		if vc, ok := p.(VisionCapable); ok && vc.SupportsVision() {
+			if _, exists := e.executors[StepVision]; !exists {
+				e.executors[StepVision] = NewVisionExecutor(p, e.metrics)
+			}
+		}
+	}
+}
+
+// WithVisionProvider registers a multimodal LLM provider for the StepVision
+// primitive. Use this when a separate vision-capable provider is desired
+// (e.g. Claude Opus for vision, Sonnet for general LLM steps), or when the
+// same provider should serve both LLM and vision steps. When the same
+// provider is passed to both WithLLMProvider and WithVisionProvider, the
+// later option wins for the vision executor.
+func WithVisionProvider(p LLMProvider) EngineOption {
+	return func(e *Engine) {
+		e.executors[StepVision] = NewVisionExecutor(p, e.metrics)
 	}
 }
 
@@ -210,6 +230,9 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		ex.metrics = e.metrics
 	}
 	if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
+		ex.metrics = e.metrics
+	}
+	if ex, ok := e.executors[StepVision].(*VisionExecutor); ok {
 		ex.metrics = e.metrics
 	}
 
