@@ -131,8 +131,14 @@ func applyStepFailure(w *Workflow, stepID, errMsg string) bool {
 	default:
 		s.State = StepFailed
 		s.Error = errMsg
-		w.State = StateFailed
-		w.Error = fmt.Sprintf("step %s failed: %s", stepID, errMsg)
+		// Preserve the first failure cause; an always_run cleanup step's failure
+		// must not mask the original error. The workflow-level err return in
+		// RunToCompletion already preserves the first error; mirror it on the
+		// persisted field.
+		if w.State != StateFailed || w.Error == "" {
+			w.State = StateFailed
+			w.Error = fmt.Sprintf("step %s failed: %s", stepID, errMsg)
+		}
 		return false
 	}
 }
