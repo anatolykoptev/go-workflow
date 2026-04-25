@@ -2,7 +2,7 @@
 
 Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.10.0** | 407 tests | Go 1.26 | [MIT License](LICENSE)
+**v0.11.0** | 478 tests | Go 1.26 | [MIT License](LICENSE)
 
 ## Features
 
@@ -22,6 +22,9 @@ Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pl
 - **Scheduler + Cron** — time-based workflow triggers
 - **Metrics** — atomic counters for workflows, steps, agents, hooks, triggers
 - **Cost tracking** — every LLM and image step contributes to `Workflow.Cost` (tokens, USD, image bytes). Optional `WithBudget(maxUSD)` aborts overrun workflows with `ErrBudgetExceeded`.
+- **OpenTelemetry tracing** — `WithTracerProvider(tp)` emits a `workflow.run` span per workflow and a `step.<kind>` span per step, with `step.duration_ms`, `step.cache_hit`, cost, and classified error attributes. Wires any OTel-compatible backend (Jaeger, Tempo, Honeycomb, Datadog, OTLP).
+- **Webhook triggers** — `Engine.RegisterWebhooks(mux, runtime, []WebhookTrigger{...})` instantiates a template from an HTTP POST. Supports bearer-token and HMAC-SHA256 (GitHub-style) auth with constant-time comparison; body cap 10 MiB; default JSON `VarMapper` overridable per trigger.
+- **Step caching** — `WithStepCache(cache) / WithStepCacheKinds(...)` skips deterministic steps when the same (kind, config, depends_on) hash has been seen before. `InMemoryCache` and `FileCache` ship in-package; cache hits replay both Output and Cost so accounting stays accurate.
 
 ## Quick Start
 
