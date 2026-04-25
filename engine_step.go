@@ -67,9 +67,14 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		StepID: stepID, StepKind: string(step.Kind),
 	})
 
-	// Execute
-	execErr := executor.Execute(ctx, step, w)
+	// Open OTel span around the executor call. Span carries the trace context
+	// downstream so child operations (HTTP, MCP) join the same trace.
+	spanCtx, span := e.startStepSpan(ctx, w, step)
+	execStart := time.Now()
+	execErr := executor.Execute(spanCtx, step, w)
 	endedAt := time.Now().UnixMilli()
+	durationMS := time.Since(execStart).Milliseconds()
+	finishStepSpan(span, step, durationMS, false, execErr)
 
 	e.getMetrics().StepsExecuted.Add(1)
 

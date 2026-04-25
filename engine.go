@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/anatolykoptev/go-kit/llm"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrBudgetExceeded is returned by cost-bearing executors when a workflow's
@@ -48,6 +49,8 @@ type Engine struct {
 	eventLog           *EventLog
 	costModel          map[string]ModelPrice
 	budgetUSD          float64 // 0 = no budget
+	tracerProvider     trace.TracerProvider
+	tracer             trace.Tracer
 }
 
 // EngineOption configures an Engine.
