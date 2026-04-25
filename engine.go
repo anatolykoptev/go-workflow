@@ -345,6 +345,53 @@ func (e *Engine) log() *slog.Logger {
 
 func (e *Engine) Store() *WorkflowStore { return e.store }
 
+// ValidateTemplate reports an error if the template references a step kind
+// for which no executor is registered on this engine. The error message
+// names the first missing kind and hints at the With*Provider option that
+// would register it. Use this at template-load or workflow-create time so
+// authoring + wiring gaps surface BEFORE the workflow ever runs.
+//
+// Returns nil for nil templates (caller's responsibility to nil-check).
+func (e *Engine) ValidateTemplate(t *Template) error {
+	if t == nil {
+		return nil
+	}
+	for _, ts := range t.Steps {
+		kind := NormalizeStepKind(ts.Kind)
+		if _, ok := e.executors[kind]; ok {
+			continue
+		}
+		return fmt.Errorf(
+			"template %q: step %q requires kind %q but no executor is registered (%s)",
+			t.Name, ts.ID, kind, executorRegistrationHint(kind),
+		)
+	}
+	return nil
+}
+
+// executorRegistrationHint returns a short hint about which EngineOption
+// registers an executor for the given step kind. Used by ValidateTemplate to
+// turn a "missing executor" failure into actionable wiring guidance.
+func executorRegistrationHint(kind StepKind) string {
+	switch kind {
+	case StepLLM:
+		return "register one with WithLLMProvider or WithLLMClient"
+	case StepVision:
+		return "register one with WithLLMProvider (vision-capable) or WithVisionProvider"
+	case StepTool:
+		return "register one with WithMCPServers or WithToolRunner"
+	case StepImage:
+		return "register one with WithImageRenderer"
+	case StepAgent:
+		return "register one with WithAgentRunner"
+	case StepA2A:
+		return "register one with WithA2ACaller"
+	case StepMessage:
+		return "register one with WithMessenger"
+	}
+	return "see go-workflow EngineOption docs for the relevant Provider"
+}
+
 // recordStepCost is called by executors that bear cost. It computes USD,
 // merges into the workflow's WorkflowCost aggregate, increments global
 // metrics, and returns ErrBudgetExceeded if the new total exceeds the
