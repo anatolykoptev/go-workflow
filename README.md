@@ -2,7 +2,7 @@
 
 Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.8.1** | 291 tests | Go 1.26 | [MIT License](LICENSE)
+**v0.10.0** | 407 tests | Go 1.26 | [MIT License](LICENSE)
 
 ## Features
 
