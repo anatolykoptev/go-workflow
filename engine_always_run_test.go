@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -134,10 +135,10 @@ func TestAlwaysRun_StepFailureDoesNotCascade(t *testing.T) {
 	if cleanupState == StepPending {
 		t.Errorf("cleanup state = %s, expected to have run (any non-pending state)", cleanupState)
 	}
-	// Original failure cause should still mention step b, not cleanup.
-	// (Tolerate either, but be explicit if cleanup overrode it.)
-	if loaded.Error == "" {
-		t.Error("workflow.Error should be non-empty (original failure)")
+	// Original failure cause must be preserved — cleanup step's failure must not
+	// overwrite the first error that caused the workflow to enter StateFailed.
+	if !strings.Contains(loaded.Error, "step b failed") {
+		t.Fatalf("Workflow.Error must preserve original failure cause; got %q", loaded.Error)
 	}
 }
 
