@@ -67,6 +67,18 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 		StepID: stepID, StepKind: string(step.Kind),
 	})
 
+	// Cache lookup BEFORE span open — a hit short-circuits execution and
+	// records a dedicated cache_hit span instead of a full executor span.
+	cacheKey, cacheable := e.stepCacheKey(w, step)
+	if cacheable {
+		if entry, ok, err := e.stepCacheGet(ctx, cacheKey); err == nil && ok {
+			return e.applyCacheHit(ctx, workflowID, stepID, w, step, cacheKey, entry)
+		}
+		if m := e.getMetrics(); m != nil {
+			m.StepCacheMisses.Add(1)
+		}
+	}
+
 	// Open OTel span around the executor call. Span carries the trace context
 	// downstream so child operations (HTTP, MCP) join the same trace.
 	spanCtx, span := e.startStepSpan(ctx, w, step)
@@ -75,6 +87,10 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 	endedAt := time.Now().UnixMilli()
 	durationMS := time.Since(execStart).Milliseconds()
 	finishStepSpan(span, step, durationMS, false, execErr)
+
+	if execErr == nil && cacheable {
+		_ = e.stepCachePut(ctx, cacheKey, w, step)
+	}
 
 	e.getMetrics().StepsExecuted.Add(1)
 

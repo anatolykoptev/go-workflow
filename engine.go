@@ -51,6 +51,8 @@ type Engine struct {
 	budgetUSD          float64 // 0 = no budget
 	tracerProvider     trace.TracerProvider
 	tracer             trace.Tracer
+	stepCache          StepCache
+	stepCacheKinds     map[StepKind]bool
 }
 
 // EngineOption configures an Engine.
