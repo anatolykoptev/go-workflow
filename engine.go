@@ -1,3 +1,15 @@
+// Package workflow — Engine ties everything together: it owns the executor
+// map, the persistence store, lifecycle notifiers, cost accounting, and the
+// dispatcher. The Engine type itself lives here, alongside the small set of
+// types it depends on. See companion files for the rest of the engine's
+// surface area:
+//
+//   - engine_options.go  — WithX functional options (configuration DSL)
+//   - engine_setters.go  — Set* methods for post-NewEngine wiring
+//   - engine_validate.go — ValidateWorkflow + ValidateTemplate pre-flight checks
+//   - step_cache.go      — WithStepCache / WithStepCacheKinds
+//   - tracing.go         — WithTracerProvider
+//   - dispatcher.go      — WithDispatcher
 package workflow
 
 import (
@@ -5,7 +17,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/anatolykoptev/go-kit/llm"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -17,8 +28,10 @@ var ErrBudgetExceeded = errors.New("workflow budget exceeded")
 // usdToMicrocents scales a dollars float to integer micro-cents (USD * 1e6)
 // with rounding. Microcents preserve sub-cent precision so cheap models
 // (Haiku/Flash, where a single call may cost <$0.01) still move the metric.
-const usdToMicrocents = 1_000_000.0
-const usdRoundHalf = 0.5
+const (
+	usdToMicrocents = 1_000_000.0
+	usdRoundHalf    = 0.5
+)
 
 // ApprovalNotifier is called when a workflow needs user approval.
 type ApprovalNotifier func(wf *Workflow, step *Step)
@@ -55,198 +68,13 @@ type Engine struct {
 	stepCacheKinds     map[StepKind]bool
 }
 
-// EngineOption configures an Engine.
-type EngineOption func(*Engine)
-
-func WithMetrics(m *Metrics) EngineOption  { return func(e *Engine) { e.metrics = m } }
-func WithLogger(l *slog.Logger) EngineOption { return func(e *Engine) { e.logger = l } }
-
-func WithHookPublisher(h HookPublisher) EngineOption {
-	return func(e *Engine) { e.hooks = h }
-}
-
-func WithMessagePublisher(m MessagePublisher) EngineOption {
-	return func(e *Engine) {
-		e.bus = m
-		e.executors[StepMessage] = NewMessageExecutor(m)
-	}
-}
-
-func WithLLMProvider(p LLMProvider) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepLLM] = NewLLMExecutor(p, e.metrics)
-		// Auto-wire vision executor when the same provider declares multimodal
-		// support. A separate vision-only provider can still be registered via
-		// WithVisionProvider, which overrides this default.
-		if vc, ok := p.(VisionCapable); ok && vc.SupportsVision() {
-			if _, exists := e.executors[StepVision]; !exists {
-				e.executors[StepVision] = NewVisionExecutor(p, e.metrics)
-			}
-		}
-	}
-}
-
-// WithVisionProvider registers a multimodal LLM provider for the StepVision
-// primitive. Use this when a separate vision-capable provider is desired
-// (e.g. Claude Opus for vision, Sonnet for general LLM steps), or when the
-// same provider should serve both LLM and vision steps. When the same
-// provider is passed to both WithLLMProvider and WithVisionProvider, the
-// later option wins for the vision executor.
-func WithVisionProvider(p LLMProvider) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepVision] = NewVisionExecutor(p, e.metrics)
-	}
-}
-
-func WithLLMClient(c *llm.Client) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepLLM] = NewLLMExecutorWithClient(c, e.metrics)
-	}
-}
-
-func WithStreamCallback(cb StreamCallback) EngineOption {
-	return func(e *Engine) {
-		if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
-			ex.SetStreamCallback(cb)
-		}
-	}
-}
-
-func WithToolRunner(t ToolRunner) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepTool] = NewToolExecutor(t)
-	}
-}
-
-func WithMCPServers(servers map[string]string) EngineOption {
-	return func(e *Engine) {
-		mcpRunner := NewMCPToolRunner(servers)
-		if existing, ok := e.executors[StepTool].(*ToolExecutor); ok {
-			multi := NewMultiToolRunner(existing.runner, mcpRunner)
-			e.executors[StepTool] = NewToolExecutor(multi)
-		} else {
-			e.executors[StepTool] = NewToolExecutor(mcpRunner)
-		}
-	}
-}
-
-// WithMCPServerHeaders sets HTTP headers (e.g. Authorization) for a specific MCP server.
-// Must be called after WithMCPServers.
-func WithMCPServerHeaders(serverID string, headers map[string]string) EngineOption {
-	return func(e *Engine) {
-		if te, ok := e.executors[StepTool].(*ToolExecutor); ok {
-			setMCPHeaders(te.runner, serverID, headers)
-		}
-	}
-}
-
-func setMCPHeaders(runner ToolRunner, serverID string, headers map[string]string) {
-	switch r := runner.(type) {
-	case *MCPToolRunner:
-		r.SetHeaders(serverID, headers)
-	case *MultiToolRunner:
-		for _, nr := range r.runners {
-			setMCPHeaders(nr.runner, serverID, headers)
-		}
-	}
-}
-
-func WithAgentRunner(a AgentRunner) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepAgent] = NewAgentExecutor(a, e.metrics)
-	}
-}
-
-func WithA2ACaller(c A2ACaller) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepA2A] = NewA2AExecutor(c, e.metrics)
-	}
-}
-
-func WithSkillResolver(s SkillResolver) EngineOption {
-	return func(e *Engine) {
-		if llm, ok := e.executors[StepLLM].(*LLMExecutor); ok {
-			llm.SetSkills(s)
-		}
-	}
-}
-
-func WithApprovalNotifier(fn ApprovalNotifier) EngineOption {
-	return func(e *Engine) { e.approvalNotifier = fn }
-}
-
-func WithCompletionNotifier(fn CompletionNotifier) EngineOption {
-	return func(e *Engine) { e.completionNotifier = fn }
-}
-
-func WithScheduler(s *Scheduler) EngineOption {
-	return func(e *Engine) { e.scheduler = s }
-}
-
-func WithTriggers(ts *TriggerService) EngineOption {
-	return func(e *Engine) { e.triggers = ts }
-}
-
-func WithEventLog(el *EventLog) EngineOption {
-	return func(e *Engine) { e.eventLog = el }
-}
-
-// WithCostModel overrides the default per-model USD pricing table.
-// Useful to add new models or apply discounted contract pricing.
-// Map is shallow-copied — caller can mutate after.
-func WithCostModel(model map[string]ModelPrice) EngineOption {
-	return func(e *Engine) {
-		if model == nil {
-			return // no-op: keep existing cost model (e.g. DefaultCostModel)
-		}
-		e.costModel = make(map[string]ModelPrice, len(model))
-		for k, v := range model {
-			e.costModel[k] = v
-		}
-	}
-}
-
-// WithBudget sets a maximum USD ceiling per workflow. When exceeded, the
-// next cost-bearing step returns ErrBudgetExceeded and the workflow fails.
-// 0 (default) means unlimited.
-func WithBudget(maxUSD float64) EngineOption {
-	return func(e *Engine) {
-		e.budgetUSD = maxUSD
-	}
-}
-
-func WithStepListener(l *StepListener) EngineOption {
-	return func(e *Engine) { e.listener = l }
-}
-
-// WithImageRenderer registers a backend renderer for the StepImage primitive.
-// When set, the engine accepts steps of kind "image". Without it, image steps
-// are rejected at validation time with an "unknown step kind" error.
-//
-// Apply this option BEFORE WithImageWorkspace — the workspace option mutates
-// the executor created here, so it must already exist.
-func WithImageRenderer(r ImageRenderer) EngineOption {
-	return func(e *Engine) {
-		e.executors[StepImage] = NewImageExecutor(r, e.metrics)
-	}
-}
-
-// WithImageWorkspace makes the image executor persist rendered bytes to disk
-// under the given directory. Each rendered step writes
-// <workspaceDir>/<workflow_id>/<step_id>.<ext> and the path appears in the
-// step's result map for downstream reference.
-//
-// Must be applied AFTER WithImageRenderer; it is a no-op when the image
-// executor has not been registered.
-func WithImageWorkspace(dir string) EngineOption {
-	return func(e *Engine) {
-		if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
-			ex.workspaceDir = dir
-		}
-	}
-}
-
-// NewEngine creates a workflow engine with functional options.
+// NewEngine creates a workflow engine with functional options. The default
+// executor set covers the dependency-free step kinds (condition, approval,
+// transform). Other kinds are registered by the corresponding WithX option:
+// WithLLMProvider for LLM/vision, WithToolRunner / WithMCPServers for tool,
+// WithImageRenderer for image, etc. Sub-workflow / foreach / branchall /
+// suspend / noop executors are wired automatically here since they need a
+// pointer back to the engine.
 func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	e := &Engine{
 		store:     store,
@@ -264,7 +92,8 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		opt(e)
 	}
 
-	// Fix metrics for executors created during option application.
+	// Fix metrics for executors created during option application — options
+	// run before e.metrics may have been overridden by WithMetrics.
 	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
 		ex.metrics = e.metrics
 	}
@@ -307,26 +136,6 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	return e
 }
 
-// --- Setters (post-creation wiring) ---
-
-func (e *Engine) SetApprovalNotifier(fn ApprovalNotifier)   { e.approvalNotifier = fn }
-func (e *Engine) SetCompletionNotifier(fn CompletionNotifier) { e.completionNotifier = fn }
-func (e *Engine) SetHooks(h HookPublisher)                  { e.hooks = h }
-
-func (e *Engine) SetAgentRunner(runner AgentRunner) {
-	e.executors[StepAgent] = NewAgentExecutor(runner, e.getMetrics())
-}
-
-func (e *Engine) SetSkills(sr SkillResolver) {
-	if llm, ok := e.executors[StepLLM].(*LLMExecutor); ok {
-		llm.SetSkills(sr)
-	}
-}
-
-func (e *Engine) SetA2ACaller(caller A2ACaller) {
-	e.executors[StepA2A] = NewA2AExecutor(caller, e.getMetrics())
-}
-
 // --- Accessors ---
 
 func (e *Engine) getMetrics() *Metrics {
@@ -344,53 +153,6 @@ func (e *Engine) log() *slog.Logger {
 }
 
 func (e *Engine) Store() *WorkflowStore { return e.store }
-
-// ValidateTemplate reports an error if the template references a step kind
-// for which no executor is registered on this engine. The error message
-// names the first missing kind and hints at the With*Provider option that
-// would register it. Use this at template-load or workflow-create time so
-// authoring + wiring gaps surface BEFORE the workflow ever runs.
-//
-// Returns nil for nil templates (caller's responsibility to nil-check).
-func (e *Engine) ValidateTemplate(t *Template) error {
-	if t == nil {
-		return nil
-	}
-	for _, ts := range t.Steps {
-		kind := NormalizeStepKind(ts.Kind)
-		if _, ok := e.executors[kind]; ok {
-			continue
-		}
-		return fmt.Errorf(
-			"template %q: step %q requires kind %q but no executor is registered (%s)",
-			t.Name, ts.ID, kind, executorRegistrationHint(kind),
-		)
-	}
-	return nil
-}
-
-// executorRegistrationHint returns a short hint about which EngineOption
-// registers an executor for the given step kind. Used by ValidateTemplate to
-// turn a "missing executor" failure into actionable wiring guidance.
-func executorRegistrationHint(kind StepKind) string {
-	switch kind {
-	case StepLLM:
-		return "register one with WithLLMProvider or WithLLMClient"
-	case StepVision:
-		return "register one with WithLLMProvider (vision-capable) or WithVisionProvider"
-	case StepTool:
-		return "register one with WithMCPServers or WithToolRunner"
-	case StepImage:
-		return "register one with WithImageRenderer"
-	case StepAgent:
-		return "register one with WithAgentRunner"
-	case StepA2A:
-		return "register one with WithA2ACaller"
-	case StepMessage:
-		return "register one with WithMessenger"
-	}
-	return "see go-workflow EngineOption docs for the relevant Provider"
-}
 
 // recordStepCost is called by executors that bear cost. It computes USD,
 // merges into the workflow's WorkflowCost aggregate, increments global
