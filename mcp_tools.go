@@ -108,6 +108,14 @@ func registerWFCreate(server *mcp.Server, deps MCPDeps) {
 			if input.Template == "" {
 				return errResult("template is required")
 			}
+			// Validate engine has executors for every kind this template needs
+			// before instantiating — fails fast with a wiring hint instead of
+			// the cryptic "no executor for step kind" at first run.
+			if tmpl, ok := deps.Templates.Get(input.Template); ok {
+				if err := deps.Engine.ValidateTemplate(tmpl); err != nil {
+					return errResult(err.Error())
+				}
+			}
 			wfID := fmt.Sprintf("wf-%s-%d", input.Template, time.Now().UnixMilli())
 			wf, err := deps.Templates.Instantiate(input.Template, wfID, input.Owner, input.Params)
 			if err != nil {

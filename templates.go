@@ -1,13 +1,72 @@
 package workflow
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 )
+
+// stepFieldAliases maps n8n-style or alternate JSON keys on a step entry to
+// the canonical name used in TemplateStep. Currently only the dependency
+// field has a known divergence; future aliases land here.
+var stepFieldAliases = map[string]string{
+	"depends": "depends_on",
+}
+
+// ParseTemplate parses a native go-workflow template from raw JSON bytes.
+// It rewrites known step-field aliases (e.g. n8n-style "depends" → "depends_on")
+// and then unmarshals strictly — unknown fields cause a clear error instead of
+// being silently dropped (which previously masked author typos).
+func ParseTemplate(data []byte) (*Template, error) {
+	rewritten, err := rewriteStepAliases(data)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(rewritten))
+	dec.DisallowUnknownFields()
+	var tmpl Template
+	if err := dec.Decode(&tmpl); err != nil {
+		return nil, fmt.Errorf("parse template: %w", err)
+	}
+	return &tmpl, nil
+}
+
+// rewriteStepAliases reads the raw JSON, walks `steps[]`, and renames known
+// alias keys per stepFieldAliases. Returns the rewritten JSON. If a step
+// already has both the alias and the canonical key, the canonical wins and
+// the alias is dropped (the alias would have been ignored anyway).
+func rewriteStepAliases(data []byte) ([]byte, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("rewrite aliases: %w", err)
+	}
+	steps, ok := raw["steps"].([]any)
+	if !ok {
+		return data, nil
+	}
+	for _, s := range steps {
+		stepMap, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		for alias, canonical := range stepFieldAliases {
+			v, hasAlias := stepMap[alias]
+			if !hasAlias {
+				continue
+			}
+			delete(stepMap, alias)
+			if _, hasCanonical := stepMap[canonical]; !hasCanonical {
+				stepMap[canonical] = v
+			}
+		}
+	}
+	return json.Marshal(raw)
+}
 
 // Template is a parameterized workflow definition loaded from a JSON file.
 // Variables in the form {{key}} in step configs are replaced at instantiation time.
@@ -227,11 +286,13 @@ func (ts *TemplateStore) loadN8nTemplate(fullPath, fname string) {
 func (ts *TemplateStore) loadNativeTemplate(fullPath, fname string) {
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
+		slog.Warn("template store: read failed", "path", fullPath, "err", err)
 		return
 	}
-	var tmpl Template
-	if err := json.Unmarshal(data, &tmpl); err != nil {
+	tmpl, err := ParseTemplate(data)
+	if err != nil {
+		slog.Warn("template store: parse failed", "path", fullPath, "err", err)
 		return
 	}
-	ts.templates[strings.TrimSuffix(fname, ".json")] = &tmpl
+	ts.templates[strings.TrimSuffix(fname, ".json")] = tmpl
 }
