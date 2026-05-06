@@ -2,11 +2,119 @@ package workflow
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 )
+
+// typedMarkerRe matches "@@int:NAME", "@@bool:NAME", "@@float:NAME" patterns
+// wrapped in JSON quotes (the surrounding quotes are part of the match so they
+// can be stripped during substitution).
+var typedMarkerRe = regexp.MustCompile(`"@@(int|bool|float):(\w+)"`)
+
+// ResolveRefsErr is like ResolveRefs but also handles typed markers
+// @@int:NAME, @@bool:NAME, @@float:NAME. Typed markers are written with
+// surrounding quotes in the template (so the JSON file stays valid pre-
+// substitution). After substitution the quotes are stripped and the value
+// is emitted as a bare typed literal. Returns an error when a marker
+// references a missing key or when the value cannot be coerced to the
+// requested type.
+//
+// Classic {{var}} substitution is unchanged and backward compatible.
+func ResolveRefsErr(s string, wf *Workflow) (string, error) {
+	// 1. Typed markers first — they need quote stripping.
+	var firstErr error
+	s = typedMarkerRe.ReplaceAllStringFunc(s, func(match string) string {
+		if firstErr != nil {
+			return match
+		}
+		groups := typedMarkerRe.FindStringSubmatch(match)
+		kind, name := groups[1], groups[2]
+		v, ok := wf.Context[name]
+		if !ok {
+			firstErr = fmt.Errorf("ResolveRefs: %s:%s not in context", kind, name)
+			return match
+		}
+		converted, err := coerceTyped(kind, v)
+		if err != nil {
+			firstErr = fmt.Errorf("ResolveRefs: %s:%s: %w", kind, name, err)
+			return match
+		}
+		return converted
+	})
+	if firstErr != nil {
+		return s, firstErr
+	}
+
+	// 2. Classic {{var}} string substitution.
+	for id, val := range wf.Context {
+		s = strings.ReplaceAll(s, "{{"+id+"}}", fmt.Sprintf("%v", val))
+	}
+	s = resolveEnvVars(s)
+	return s, nil
+}
+
+// coerceTyped converts v to the bare JSON literal for the requested kind
+// (int, bool, float). Returns the literal string without quotes. Returns
+// an error when v cannot be represented as that type.
+func coerceTyped(kind string, v any) (string, error) {
+	switch kind {
+	case "int":
+		return coerceInt(v)
+	case "bool":
+		return coerceBool(v)
+	case "float":
+		return coerceFloat(v)
+	}
+	return "", fmt.Errorf("unsupported kind %q for value %T", kind, v)
+}
+
+func coerceInt(v any) (string, error) {
+	switch x := v.(type) {
+	case int:
+		return strconv.Itoa(x), nil
+	case int64:
+		return strconv.FormatInt(x, 10), nil
+	case float64:
+		return strconv.FormatInt(int64(x), 10), nil
+	case string:
+		if i, err := strconv.ParseInt(x, 10, 64); err == nil {
+			return strconv.FormatInt(i, 10), nil
+		}
+		return "", fmt.Errorf("not int-coercible: %q", x)
+	}
+	return "", fmt.Errorf("unsupported int source type %T", v)
+}
+
+func coerceBool(v any) (string, error) {
+	switch x := v.(type) {
+	case bool:
+		return strconv.FormatBool(x), nil
+	case string:
+		if b, err := strconv.ParseBool(x); err == nil {
+			return strconv.FormatBool(b), nil
+		}
+		return "", fmt.Errorf("not bool-coercible: %q", x)
+	}
+	return "", fmt.Errorf("unsupported bool source type %T", v)
+}
+
+func coerceFloat(v any) (string, error) {
+	switch x := v.(type) {
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64), nil
+	case int:
+		return strconv.Itoa(x), nil
+	case string:
+		if f, err := strconv.ParseFloat(x, 64); err == nil {
+			return strconv.FormatFloat(f, 'f', -1, 64), nil
+		}
+		return "", fmt.Errorf("not float-coercible: %q", x)
+	}
+	return "", fmt.Errorf("unsupported float source type %T", v)
+}
 
 // resolveRef replaces "$steps.{id}" references with context values.
 func resolveRef(val any, wf *Workflow) any {
@@ -52,15 +160,23 @@ func resolvePromptRefs(s string, wf *Workflow) string {
 	return ResolveRefs(s, wf)
 }
 
-// ResolveRefs replaces {{stepID}} placeholders in a string with workflow context values.
-// Also resolves ${VAR} and $env.VAR patterns with environment variables (n8n compat).
+// ResolveRefs replaces {{stepID}} placeholders in a string with workflow
+// context values. Also resolves ${VAR} patterns with environment variables
+// (n8n compat). Preserves the original string-only signature for backward
+// compatibility. Callers that need typed @@int/@@bool/@@float substitution
+// should migrate to ResolveRefsErr.
+//
+// TODO(#typed-markers): switch engine.go call sites to ResolveRefsErr so
+// typed-marker errors surface as workflow step failures instead of log warns.
 func ResolveRefs(s string, wf *Workflow) string {
-	for id, val := range wf.Context {
-		s = strings.ReplaceAll(s, "{{"+id+"}}", fmt.Sprintf("%v", val))
+	out, err := ResolveRefsErr(s, wf)
+	if err != nil {
+		// Best-effort fallback — log and continue. Legacy callers expected
+		// string-only behavior; typed markers in old templates will surface
+		// upstream as JSON-unmarshal errors rather than step failures.
+		slog.Warn("ResolveRefs typed-marker error", "err", err)
 	}
-	// Resolve ${VAR} environment variable references (n8n compat)
-	s = resolveEnvVars(s)
-	return s
+	return out
 }
 
 // envVarRegex matches ${VAR_NAME} patterns.

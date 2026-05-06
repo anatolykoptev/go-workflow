@@ -13,7 +13,7 @@ DAG workflow engine. **Library, not a service** — no `main.go`, no `cmd/`. Con
 - `StartAsync` detaches from caller context (uses `context.Background()`) — workflow outlives the HTTP request that started it
 - `HandleApproval(id, bool)` only works when `State == StateWaitingApproval` — returns error otherwise. After approve, call `ResumeAsync` to continue
 - `StepKind` has n8n aliases: `"if"` → condition, `"http_request"` → tool. Always use `NormalizeStepKind()` when comparing
-- Template `Config` is `json.RawMessage` — variable `{{key}}` substitution happens on raw string before JSON unmarshal, not on parsed map
+- Template `Config` is `json.RawMessage` — `{{key}}` substitutes as a quoted string (raw string ReplaceAll before JSON unmarshal). For non-string values use `"@@int:key"` / `"@@bool:key"` / `"@@float:key"` markers — surrounding quotes are stripped after substitution so the value becomes a bare typed JSON literal. Use `ResolveRefsErr` to surface coercion errors; `ResolveRefs` logs and continues (backward compat)
 - ForEach/BranchAll create dynamic sub-steps at runtime — they won't appear in initial step list
 - Step result goes to both `step.Result` AND `wf.Context[step.ID]` — downstream steps reference via `$steps.{id}.result`
 - `MCPToolRunner` uses lazy connect + auto-discover — first call to unknown tool triggers connect to all servers

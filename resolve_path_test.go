@@ -5,6 +5,75 @@ import (
 	"testing"
 )
 
+func TestResolveRefs_TypedInt(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{Context: map[string]any{"wait_a_ms": "6000"}}
+	out, err := ResolveRefsErr(`{"wait_ms": "@@int:wait_a_ms"}`, wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"wait_ms": 6000}`
+	if out != want {
+		t.Errorf("got %q want %q", out, want)
+	}
+}
+
+func TestResolveRefs_TypedIntFromInt(t *testing.T) {
+	t.Parallel()
+	// Value already int — still works.
+	wf := &Workflow{Context: map[string]any{"x": 42}}
+	out, err := ResolveRefsErr(`{"v": "@@int:x"}`, wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != `{"v": 42}` {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestResolveRefs_TypedIntInvalid(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{Context: map[string]any{"x": "abc"}}
+	_, err := ResolveRefsErr(`{"v": "@@int:x"}`, wf)
+	if err == nil {
+		t.Errorf("expected error for non-numeric @@int:")
+	}
+}
+
+func TestResolveRefs_TypedBool(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{Context: map[string]any{"flag": "true"}}
+	out, err := ResolveRefsErr(`{"on": "@@bool:flag"}`, wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != `{"on": true}` {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestResolveRefs_TypedFloat(t *testing.T) {
+	t.Parallel()
+	wf := &Workflow{Context: map[string]any{"r": "0.95"}}
+	out, err := ResolveRefsErr(`{"rate": "@@float:r"}`, wf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != `{"rate": 0.95}` {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestResolveRefs_StringStillWorks(t *testing.T) {
+	t.Parallel()
+	// Existing {{var}} behavior unchanged — backward compat.
+	wf := &Workflow{Context: map[string]any{"name": "alice"}}
+	out := ResolveRefs(`{"hi": "{{name}}"}`, wf)
+	if out != `{"hi": "alice"}` {
+		t.Errorf("got %q", out)
+	}
+}
+
 func TestSplitPath(t *testing.T) {
 	t.Parallel()
 
