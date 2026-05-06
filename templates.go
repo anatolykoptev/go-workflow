@@ -187,10 +187,15 @@ func instantiateSteps(templateSteps []TemplateStep, merged map[string]any) ([]St
 
 // instantiateStep converts a single template step to a workflow step.
 func instantiateStep(ts TemplateStep, merged map[string]any) (Step, error) {
-	// Substitute variables in the raw JSON config
-	configStr := string(ts.Config)
-	for k, v := range merged {
-		configStr = strings.ReplaceAll(configStr, "{{"+k+"}}", fmt.Sprintf("%v", v))
+	// Build a stub Workflow with merged params as Context so ResolveRefsErr
+	// handles both classic {{x}} substitution and typed @@int/@@bool/@@float
+	// markers in a single pass. The inline strings.ReplaceAll loop used here
+	// previously bypassed typed-marker logic entirely.
+	stub := &Workflow{Context: merged}
+
+	configStr, err := ResolveRefsErr(string(ts.Config), stub)
+	if err != nil {
+		return Step{}, fmt.Errorf("step %s: typed-marker substitution failed: %w", ts.ID, err)
 	}
 
 	var config map[string]any
@@ -200,9 +205,9 @@ func instantiateStep(ts TemplateStep, merged map[string]any) (Step, error) {
 
 	// Merge step-level retry/on_error into config (engine reads from config)
 	if len(ts.Retry) > 0 {
-		retryStr := string(ts.Retry)
-		for k, v := range merged {
-			retryStr = strings.ReplaceAll(retryStr, "{{"+k+"}}", fmt.Sprintf("%v", v))
+		retryStr, err := ResolveRefsErr(string(ts.Retry), stub)
+		if err != nil {
+			return Step{}, fmt.Errorf("step %s: retry typed-marker substitution failed: %w", ts.ID, err)
 		}
 		var retryVal any
 		if err := json.Unmarshal([]byte(retryStr), &retryVal); err == nil {
