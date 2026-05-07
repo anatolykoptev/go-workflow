@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.13.1 — typed markers wired into instantiateStep
+
+### Fixed
+
+- **`templates.go::instantiateStep`** previously had its own `strings.ReplaceAll` substitution loop that bypassed `ResolveRefs(Err)` entirely. Templates using the typed markers introduced in v0.13.0 leaked the literal `"@@int:NAME"` text into Step config, causing downstream JSON-schema validators to reject the call with `type "string", want "integer"`.
+- The same path is now `ResolveRefsErr(string(ts.Config), &Workflow{Context: merged})`, the canonical entry point. Coercion errors propagate as `step <id>: typed-marker substitution failed: <reason>`. The Retry block uses the same path. Three new tests in `template_typed_markers_test.go` cover `@@int`, `@@bool`, and classic `{{x}}` preservation.
+
+## v0.13.0 — typed template markers
+
+### Added
+
+- **`@@int:NAME` / `@@bool:NAME` / `@@float:NAME`** — typed substitution markers wrapped in JSON quotes inside the template (so the file remains valid JSON pre-substitution). After substitution, the surrounding quotes are stripped and the value is emitted as a bare typed JSON literal. Required when the downstream consumer (e.g. an MCP tool's JSON-schema validator) demands a non-string type.
+- **`ResolveRefsErr(s, wf) (string, error)`** — explicit-error variant of `ResolveRefs`. Returns a typed coercion error when a marker references a missing key or a value that cannot be coerced (e.g. `@@int:` against `"abc"`). The legacy `ResolveRefs` keeps its signature; on coercion error it logs via `slog.Warn` and continues — backward-compatible with all existing callers.
+- **`coerceTyped(kind, v)`** — internal helper accepts `int`, `int64`, `float64`, `bool`, or numeric/boolean strings; rejects anything else with a wrapped error.
+
+### Why
+
+`Template.Config` is `json.RawMessage` and substitution runs on the raw bytes before unmarshal. The classic `{{key}}` syntax preserves the surrounding JSON quotes from the template literal (so `"x": "{{n}}"` with `n=5` becomes `"x": "5"`), erasing types. Templates that needed non-string params had to either hardcode the value at template-author time (defeating per-call parametrization) or rely on the consumer to coerce strings — fragile and tool-specific. Typed markers solve this without breaking JSON validity at template load time.
+
+## v0.12.0 — alias loader + ValidateTemplate + engine.go split
+
+### Added
+
+- Template alias loader and `ValidateTemplate` for explicit pre-flight checks.
+- Internal `engine.go` split for readability — no external API change.
+
 ## v0.11.0 — M2: production readiness
 
 ### Added

@@ -2,14 +2,14 @@
 
 Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.11.0** | 478 tests | Go 1.26 | [MIT License](LICENSE)
+**v0.13.1** | Go 1.26 | [MIT License](LICENSE)
 
 ## Features
 
 - **DAG execution** — steps run in parallel when dependencies allow
 - **15 step types** — adds `vision` for multimodal LLM calls with image inputs (companion to the new `image` step), via optional `VisionCapable` provider interface. Full list: tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop, image, vision
 - **MCP integration** — `WithMCPServers()` connects to any MCP server, auto-discovers tools
-- **Templates** — parameterized workflow definitions with `{{variable}}` substitution, loaded from JSON files
+- **Templates** — parameterized workflow definitions with `{{variable}}` (string) and `"@@int:NAME"` / `"@@bool:NAME"` / `"@@float:NAME"` (typed) substitution, loaded from JSON files
 - **Approval flow** — pause workflow, await human/AI approval, resume or reject
 - **Pluggable persistence** — JSON files (default), SQLite, or PostgreSQL
 - **Distributed execution** — dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue
@@ -80,15 +80,18 @@ engine := workflow.NewEngine(store,
 
 ## Templates
 
-JSON files loaded by `TemplateStore`. Parameters replace `{{key}}` placeholders.
+JSON files loaded by `TemplateStore`. Two substitution syntaxes:
+
+- **`{{key}}`** — string substitution. Works inside JSON string values; the surrounding quotes from the template literal are preserved, so the result is always a JSON string.
+- **`"@@int:KEY"` / `"@@bool:KEY"` / `"@@float:KEY"`** — typed substitution. Quotes are stripped after substitution and the value is emitted as a bare typed JSON literal. Required when the downstream consumer (e.g. an MCP tool's JSON-schema validator) demands a non-string type.
 
 ```json
 {
   "name": "Create collection: {{topic}}",
-  "params": {"topic": "Article topic", "count": "Number of places"},
-  "defaults": {"count": 12},
+  "params": {"topic": "Article topic", "count": "Number of places", "verbose": "Verbose log flag"},
+  "defaults": {"count": "12", "verbose": "false"},
   "steps": [
-    {"id": "research", "kind": "tool", "config": {"tool": "wp_research", "args": {"topic": "{{topic}}", "count": "{{count}}"}}},
+    {"id": "research", "kind": "tool", "config": {"tool": "wp_research", "args": {"topic": "{{topic}}", "count": "@@int:count", "verbose": "@@bool:verbose"}}},
     {"id": "select",   "kind": "approval", "config": {"message": "Select places"}, "depends_on": ["research"]},
     {"id": "enrich",   "kind": "tool", "config": {"tool": "wp_enrich"}, "depends_on": ["select"]},
     {"id": "compose",  "kind": "approval", "config": {"message": "Write content"}, "depends_on": ["enrich"]},
@@ -100,10 +103,13 @@ JSON files loaded by `TemplateStore`. Parameters replace `{{key}}` placeholders.
 ```go
 ts := workflow.NewTemplateStore("/path/to/templates")
 wf, _ := ts.Instantiate("create-collection", "wf-123", "ai:claude", map[string]any{
-    "topic": "смотровые площадки",
-    "count": 15,
+    "topic":   "смотровые площадки",
+    "count":   "15",     // typed @@int:count emits bare 15 in JSON
+    "verbose": "true",   // typed @@bool:verbose emits bare true
 })
 ```
+
+After substitution `args.count` is the JSON integer `15` (not the string `"15"`); `args.verbose` is the JSON boolean `true`. Coercion errors (e.g. `@@int:` against a non-numeric value) surface from `ResolveRefsErr`; the legacy `ResolveRefs` logs and continues for backward compat.
 
 ## Approval Flow
 
