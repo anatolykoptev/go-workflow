@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/anatolykoptev/go-workflow/main/docs/template.schema.json",
+  "title": "go-workflow Template",
+  "description": "Schema for go-workflow native template JSON files. Reference via $schema key for IDE validation.",
+  "type": "object",
+  "required": ["name", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference URL."
+    },
+    "name": {
+      "type": "string",
+      "description": "Template name. May contain {{param}} placeholders substituted at instantiation."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description. May contain {{param}} placeholders."
+    },
+    "params": {
+      "type": "object",
+      "description": "Parameter declarations. Values are either a string (legacy description) or a ParamSpec object.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Legacy form: plain description string. Treated as type=string."
+          },
+          {
+            "$ref": "#/$defs/ParamSpec"
+          }
+        ]
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default parameter values. Keys must match param names. Values must be coercible to the declared param type.",
+      "additionalProperties": true
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered list of template steps. Dependencies are declared via depends_on.",
+      "items": {
+        "$ref": "#/$defs/TemplateStep"
+      }
+    }
+  },
+  "$defs": {
+    "ParamSpec": {
+      "type": "object",
+      "description": "Typed parameter declaration. Replaces the legacy string-description form.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "int", "bool", "float", "object", "array"],
+          "description": "Declared type. Used for coercion before substitution and load-time default validation."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable parameter description."
+        },
+        "default": {
+          "description": "Default value. Must be coercible to the declared type.",
+          "oneOf": [
+            {"type": "string"},
+            {"type": "number"},
+            {"type": "boolean"},
+            {"type": "object"},
+            {"type": "array"},
+            {"type": "null"}
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "description": "If true, instantiation fails when this param is not supplied and has no default.",
+          "default": false
+        },
+        "enum": {
+          "type": "array",
+          "description": "Allowed values. Not currently enforced at runtime (reserved for future validation).",
+          "items": {}
+        }
+      }
+    },
+    "TemplateStep": {
+      "type": "object",
+      "description": "A single step in the template. Config values may contain {{param}} placeholders.",
+      "required": ["id", "kind", "config"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique step identifier within this template."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Step type. Canonical: tool, llm, approval, condition, message, workflow, agent, transform, a2a, foreach, branchall, suspend, noop, image, vision. n8n aliases also accepted.",
+          "examples": ["tool", "llm", "condition", "message", "transform", "agent"]
+        },
+        "config": {
+          "type": "object",
+          "description": "Step configuration. Schema varies by kind. Values may contain {{param}} placeholders.",
+          "additionalProperties": true
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of step IDs that must complete before this step runs."
+        },
+        "retry": {
+          "type": "object",
+          "description": "Retry policy for this step.",
+          "additionalProperties": true
+        },
+        "on_error": {
+          "type": "string",
+          "enum": ["fail", "skip", "continue"],
+          "description": "Error handling strategy. Default: fail."
+        }
+      }
+    }
+  }
+}

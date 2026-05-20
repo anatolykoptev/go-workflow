@@ -7,10 +7,10 @@ import (
 
 // TemplateMeta is lightweight metadata for listing templates.
 type TemplateMeta struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Params      map[string]string `json:"params,omitempty"`
-	Source      string            `json:"source"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Params      ParamsMap `json:"params,omitempty"`
+	Source      string    `json:"source"`
 }
 
 // TemplateRuntime loads workflow templates from a single directory.

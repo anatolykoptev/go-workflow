@@ -80,10 +80,29 @@ engine := workflow.NewEngine(store,
 
 ## Templates
 
-JSON files loaded by `TemplateStore`. Two substitution syntaxes:
+JSON files loaded by `TemplateStore`. IDE / Claude validation via JSON Schema:
 
-- **`{{key}}`** — string substitution. Works inside JSON string values; the surrounding quotes from the template literal are preserved, so the result is always a JSON string.
-- **`"@@int:KEY"` / `"@@bool:KEY"` / `"@@float:KEY"`** — typed substitution. Quotes are stripped after substitution and the value is emitted as a bare typed JSON literal. Required when the downstream consumer (e.g. an MCP tool's JSON-schema validator) demands a non-string type.
+```json
+{ "$schema": "https://raw.githubusercontent.com/anatolykoptev/go-workflow/main/docs/template.schema.json" }
+```
+
+See [`docs/template.schema.json`](docs/template.schema.json) for the full schema reference.
+
+### Substitution
+
+- **`{{key}}`** — string substitution. The surrounding JSON quotes are preserved; result is always a JSON string.
+- **Typed ParamSpec** *(preferred)* — declare `"type": "int"` (or `bool`, `float`) on the param; engine coerces the value before substitution and strips surrounding quotes automatically:
+
+  ```json
+  "params": {
+    "count":   {"type": "int",   "description": "Number of places", "default": 12},
+    "verbose": {"type": "bool",  "description": "Verbose log flag",  "default": false}
+  }
+  ```
+
+  Then `"count": "{{count}}"` in a step config becomes `"count": 12` after substitution (bare integer).
+
+- **`"@@int:KEY"` / `"@@bool:KEY"` / `"@@float:KEY"`** *(deprecated since v0.14)* — typed substitution via magic markers. Quotes are stripped after substitution. Emits a deprecation log per match pointing to the typed ParamSpec form above.
 
 ```json
 {

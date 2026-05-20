@@ -68,9 +68,9 @@ type wfStatusOutput struct {
 }
 
 type wfTemplateInfo struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	Params      map[string]string `json:"params,omitempty"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Params      ParamsMap `json:"params,omitempty"`
 }
 
 // Helpers.

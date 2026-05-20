@@ -2,6 +2,32 @@ package workflow
 
 import "time"
 
+// ParamSpec type constants — used in ParamSpec.Type and coercion switches.
+const (
+	ParamTypeString = "string"
+	ParamTypeInt    = "int"
+	ParamTypeBool   = "bool"
+	ParamTypeFloat  = "float"
+	ParamTypeObject = "object"
+	ParamTypeArray  = "array"
+)
+
+// ParamSpec declares the type, default, and validation rules for a template
+// parameter. Replaces the legacy free-text-description form where
+// Params was map[string]string.
+//
+// JSON forms accepted:
+//
+//	Legacy:  "name": "Description text"          → {Type:"string", Description:"..."}
+//	Typed:   "name": {"type":"int", "default":6}  → {Type:"int", Default:6}
+type ParamSpec struct {
+	Type        string `json:"type"` // ParamTypeString|ParamTypeInt|ParamTypeBool|ParamTypeFloat|ParamTypeObject|ParamTypeArray
+	Description string `json:"description,omitempty"`
+	Default     any    `json:"default,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	Enum        []any  `json:"enum,omitempty"`
+}
+
 // WorkflowState represents the lifecycle state of a workflow.
 type WorkflowState string
 
@@ -108,8 +134,8 @@ var stepKindAliases = map[StepKind]StepKind{
 	"image_render": StepImage,
 
 	// Vision (multimodal LLM) aliases — common naming variants.
-	"llm_vision":  StepVision,
-	"multimodal":  StepVision,
+	"llm_vision": StepVision,
+	"multimodal": StepVision,
 }
 
 // NormalizeStepKind resolves a step kind alias to the canonical Vaelor step kind.

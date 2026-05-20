@@ -58,9 +58,9 @@ func buildDependsOn(conns map[string]N8nNodeConnection, nameToID map[string]stri
 	return deps
 }
 
-func convertNodes(nodes []N8nNode, nameToID map[string]string, dependsOn map[string][]string) ([]TemplateStep, map[string]string) {
+func convertNodes(nodes []N8nNode, nameToID map[string]string, dependsOn map[string][]string) ([]TemplateStep, ParamsMap) {
 	var steps []TemplateStep
-	triggerParams := map[string]string{}
+	triggerParams := ParamsMap{}
 
 	for i := range nodes {
 		node := &nodes[i]
