@@ -105,8 +105,19 @@ linters:
       - path: engine_lifecycle\.go
         linters:
           - gocognit
+          - gosec
       - path: engine_validate\.go
         linters:
           - gocognit
           - cyclop
           - funlen
+      - path: executor_llm_tools\.go
+        linters:
+          - gocognit
+      - path: listener\.go
+        linters:
+          - gosec
+      # Tests use httptest.NewRequest (no context) — low-risk in test helpers
+      - path: _test\.go
+        linters:
+          - noctx

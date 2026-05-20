@@ -1,7 +1,7 @@
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
 filippo.io/edwards25519 v1.2.0/go.mod h1:xzAOLCNug/yB62zG1bQ8uziwrIqIuxhctzJT18Q77mc=
-github.com/anatolykoptev/go-kit v0.25.0 h1:KYdkRmFVqMdB8N7lK/yHuQSvqMPDWpXL6tbYIl0YDSw=
+github.com/anatolykoptev/go-kit v0.25.0 h1:2ZK6nOO7FKBkgEYNR6C1iw9l+lpEb9ecwsa0I64YPt8=
 github.com/anatolykoptev/go-kit v0.25.0/go.mod h1:v4plvwT/sA9C7kSZhXU+nTWdzB0JFkNhIycb6awAHoU=
 github.com/anatolykoptev/go-mcpserver v0.11.0 h1:shz0WBhOvrPGHQpAeEMo3Fhx1F+p3AV6403FaKSiuSY=
 github.com/anatolykoptev/go-mcpserver v0.11.0/go.mod h1:pQfKlzExLv/evW42l940ZHMMcliv1OU98oExwfBnIWQ=

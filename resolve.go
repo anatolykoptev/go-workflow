@@ -25,6 +25,8 @@ var typedMarkerRe = regexp.MustCompile(`"@@(int|bool|float):(\w+)"`)
 // Classic {{var}} substitution is unchanged and backward compatible.
 func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 	// 1. Typed markers first — they need quote stripping.
+	// Deprecated: prefer typed ParamSpec declarations instead of @@int/@@bool/@@float markers.
+	// See: https://github.com/anatolykoptev/go-workflow/blob/main/docs/template.schema.json
 	var firstErr error
 	s = typedMarkerRe.ReplaceAllStringFunc(s, func(match string) string {
 		if firstErr != nil {
@@ -32,6 +34,9 @@ func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 		}
 		groups := typedMarkerRe.FindStringSubmatch(match)
 		kind, name := groups[1], groups[2]
+		slog.Warn("template: @@type:NAME marker is deprecated; use typed ParamSpec instead",
+			"marker", match, "param", name,
+			"migration", fmt.Sprintf(`use {"type":"%s"} in params declaration instead of @@%s:%s`, kind, kind, name))
 		v, ok := wf.Context[name]
 		if !ok {
 			firstErr = fmt.Errorf("ResolveRefs: %s:%s not in context", kind, name)
@@ -61,11 +66,11 @@ func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 // an error when v cannot be represented as that type.
 func coerceTyped(kind string, v any) (string, error) {
 	switch kind {
-	case "int":
+	case ParamTypeInt:
 		return coerceInt(v)
-	case "bool":
+	case ParamTypeBool:
 		return coerceBool(v)
-	case "float":
+	case ParamTypeFloat:
 		return coerceFloat(v)
 	}
 	return "", fmt.Errorf("unsupported kind %q for value %T", kind, v)

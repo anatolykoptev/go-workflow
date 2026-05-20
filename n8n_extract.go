@@ -238,18 +238,18 @@ func extractBodyParam(node *N8nNode, key string) string {
 
 // --- Trigger parameter extraction ---
 
-func extractTriggerParams(node *N8nNode, params map[string]string) {
+func extractTriggerParams(node *N8nNode, params ParamsMap) {
 	switch node.Type {
 	case "n8n-nodes-base.webhook":
 		if path, ok := node.Parameters["path"].(string); ok {
-			params["webhook_path"] = path
+			params["webhook_path"] = ParamSpec{Type: "string", Description: path}
 		}
 		if method, ok := node.Parameters["httpMethod"].(string); ok {
-			params["webhook_method"] = method
+			params["webhook_method"] = ParamSpec{Type: "string", Description: method}
 		}
 	case "n8n-nodes-base.scheduleTrigger", "n8n-nodes-base.cronTrigger":
 		if expr := extractCronExpression(node); expr != "" {
-			params["cron"] = expr
+			params["cron"] = ParamSpec{Type: "string", Description: expr}
 		}
 	}
 }

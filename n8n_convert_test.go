@@ -111,9 +111,9 @@ func TestConvertN8n_SEOMaintenance(t *testing.T) {
 		t.Errorf("step[2] content should contain {{audit}}, got: %s", content)
 	}
 
-	// Trigger params should have cron expression
-	if tmpl.Params["cron"] != "0 3 * * 1" {
-		t.Errorf("trigger params cron = %q, want '0 3 * * 1'", tmpl.Params["cron"])
+	// Trigger params should have cron expression (n8n converter stores it as Description).
+	if spec := tmpl.Params["cron"]; spec.Description != "0 3 * * 1" {
+		t.Errorf("trigger params cron description = %q, want '0 3 * * 1'", spec.Description)
 	}
 }
 
