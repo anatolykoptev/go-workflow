@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -169,6 +170,43 @@ func (p *ParamsMap) UnmarshalJSON(data []byte) error {
 	}
 	*p = out
 	return nil
+}
+
+// paramSpecWire is the full-object JSON form for a ParamSpec.
+// Fields with zero values are omitted to keep the output compact.
+// This is used by ParamsMap.MarshalJSON for non-legacy entries.
+type paramSpecWire struct {
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	Default     any    `json:"default,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	Enum        []any  `json:"enum,omitempty"`
+}
+
+// MarshalJSON implements json.Marshaler. It preserves the legacy wire shape
+// for trivially-legacy entries (Type=string, no default/required/enum) by
+// emitting a bare string (the Description). This keeps backward-compat for
+// consumers (go-wp, vaelor, krolik-agent) that read params as map[string]string.
+//
+// Non-trivial entries (typed, required, enumerated, or with a default) are
+// marshaled as the full {"type":"...","description":"...",...} object form.
+func (p ParamsMap) MarshalJSON() ([]byte, error) {
+	out := make(map[string]json.RawMessage, len(p))
+	for k, v := range p {
+		var raw json.RawMessage
+		var err error
+		if v.Type == ParamTypeString && v.Default == nil && !v.Required && len(v.Enum) == 0 {
+			// Legacy wire shape: bare string description.
+			raw, err = json.Marshal(v.Description)
+		} else {
+			raw, err = json.Marshal(paramSpecWire(v))
+		}
+		if err != nil {
+			return nil, fmt.Errorf("params[%s]: %w", k, err)
+		}
+		out[k] = raw
+	}
+	return json.Marshal(out)
 }
 
 // templateVarRe matches {{varname}} placeholders in template step configs.
@@ -332,10 +370,13 @@ func coerceParamValue(typ string, v any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Parse back to int so downstream JSON marshal emits a number.
-		var n float64
-		if _, err := fmt.Sscanf(s, "%g", &n); err != nil {
-			return nil, err
+		// Use strconv.ParseInt to preserve int64 precision.
+		// Sscanf("%g") via float64 loses precision for values > 2^53
+		// (e.g. Telegram chat_id, Discord snowflake). json.Marshal(int64)
+		// emits a bare integer, not scientific notation.
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("coerce %q to int: %w", s, err)
 		}
 		return n, nil
 	case ParamTypeBool:

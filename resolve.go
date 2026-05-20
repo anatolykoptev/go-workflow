@@ -7,12 +7,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // typedMarkerRe matches "@@int:NAME", "@@bool:NAME", "@@float:NAME" patterns
 // wrapped in JSON quotes (the surrounding quotes are part of the match so they
 // can be stripped during substitution).
 var typedMarkerRe = regexp.MustCompile(`"@@(int|bool|float):(\w+)"`)
+
+// deprecatedMarkerWarnedSet deduplicates @@type:NAME deprecation warnings.
+// Key: "kind:name" (e.g. "int:delay"). Ensures each unique marker logs at
+// most once per process lifetime regardless of how many templates reference it.
+var deprecatedMarkerWarnedSet sync.Map
 
 // ResolveRefsErr is like ResolveRefs but also handles typed markers
 // @@int:NAME, @@bool:NAME, @@float:NAME. Typed markers are written with
@@ -34,9 +40,12 @@ func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 		}
 		groups := typedMarkerRe.FindStringSubmatch(match)
 		kind, name := groups[1], groups[2]
-		slog.Warn("template: @@type:NAME marker is deprecated; use typed ParamSpec instead",
-			"marker", match, "param", name,
-			"migration", fmt.Sprintf(`use {"type":"%s"} in params declaration instead of @@%s:%s`, kind, kind, name))
+		warnKey := kind + ":" + name
+		if _, alreadyWarned := deprecatedMarkerWarnedSet.LoadOrStore(warnKey, struct{}{}); !alreadyWarned {
+			slog.Warn("template: @@type:NAME marker is deprecated; use typed ParamSpec instead",
+				"marker", match, "param", name,
+				"migration", fmt.Sprintf(`use {"type":"%s"} in params declaration instead of @@%s:%s`, kind, kind, name))
+		}
 		v, ok := wf.Context[name]
 		if !ok {
 			firstErr = fmt.Errorf("ResolveRefs: %s:%s not in context", kind, name)

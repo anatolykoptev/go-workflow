@@ -1,11 +1,160 @@
 package workflow
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
 )
+
+// --- Fix 1: int precision ---
+
+// TestParamSpec_IntPreservesInt64Precision verifies that coerceParamValue for
+// ParamTypeInt returns int64, not float64. float64 loses precision for integers
+// > 2^53 (e.g. Telegram chat_id, Discord snowflake). Reproduces the bug where
+// fmt.Sscanf("%g") silently rounded 9007199254740993 → 9007199254740992.
+func TestParamSpec_IntPreservesInt64Precision(t *testing.T) {
+	// 2^53 + 1 = 9007199254740993 — first integer not representable as float64.
+	v, err := coerceParamValue(ParamTypeInt, "9007199254740993")
+	if err != nil {
+		t.Fatalf("coerceParamValue: %v", err)
+	}
+	got, ok := v.(int64)
+	if !ok {
+		t.Fatalf("returned type = %T (%v), want int64", v, v)
+	}
+	const want int64 = 9007199254740993
+	if got != want {
+		t.Errorf("got %d, want %d (precision loss via float64?)", got, want)
+	}
+}
+
+// TestParamSpec_IntCoercionProducesCorrectLiteral verifies that an int64
+// param (> 2^53) flows through validateAndCoerceParams + applyTypedSubstitutions
+// and produces a JSON literal containing the exact integer string — not
+// scientific notation, not a rounded float64 representation.
+// Note: step.Config (map[string]any) re-decodes numbers via float64 per Go
+// stdlib; this test verifies the intermediate JSON wire string is correct.
+func TestParamSpec_IntCoercionProducesCorrectLiteral(t *testing.T) {
+	specs := ParamsMap{
+		"chat_id": ParamSpec{Type: ParamTypeInt, Description: "Telegram chat id"},
+	}
+	merged := map[string]any{"chat_id": int64(9007199254740993)}
+
+	// Coerce: stores int64 in merged.
+	if err := validateAndCoerceParams(specs, merged); err != nil {
+		t.Fatalf("validateAndCoerceParams: %v", err)
+	}
+	v, ok := merged["chat_id"].(int64)
+	if !ok {
+		t.Fatalf("after coerce: type = %T, want int64", merged["chat_id"])
+	}
+	if v != 9007199254740993 {
+		t.Errorf("after coerce: got %d, want 9007199254740993", v)
+	}
+
+	// Substitution: json.Marshal(int64) must emit bare integer literal.
+	configStr := `{"tool":"send","input":{"chat_id":"{{chat_id}}"}}`
+	got := applyTypedSubstitutions(configStr, merged, specs)
+	if !strings.Contains(got, "9007199254740993") {
+		t.Errorf("substituted config = %s; want to contain 9007199254740993 as bare integer", got)
+	}
+	if strings.Contains(got, "e+") || strings.Contains(got, "E+") || strings.Contains(got, "e15") {
+		t.Errorf("substituted config = %s; must not contain scientific notation", got)
+	}
+}
+
+// --- Fix 2: deprecation warn dedup ---
+
+// TestParamSpec_DeprecationWarnFiresOnce verifies that when a template step
+// contains two @@int: markers, instantiation logs exactly one deprecation
+// warning per unique marker name, not one per occurrence per call.
+func TestParamSpec_DeprecationWarnFiresOnce(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	defer slog.SetDefault(prev)
+
+	ts := TemplateStep{
+		ID:     "s1",
+		Kind:   "tool",
+		Config: json.RawMessage(`{"a":"@@int:x","b":"@@int:x"}`),
+	}
+	merged := map[string]any{"x": 42}
+
+	// Call instantiateStep twice to confirm the dedup is process-wide.
+	for range 2 {
+		if _, err := instantiateStep(ts, merged); err != nil {
+			t.Fatalf("instantiateStep: %v", err)
+		}
+	}
+
+	logOutput := buf.String()
+	count := strings.Count(logOutput, "deprecated")
+	if count != 1 {
+		t.Errorf("expected exactly 1 deprecation warn, got %d\nlog:\n%s", count, logOutput)
+	}
+}
+
+// --- Fix 3: ParamsMap MarshalJSON ---
+
+// TestParamsMap_LegacyShapeRoundTrip verifies that a trivially-legacy
+// ParamSpec (Type=string, no default/required/enum) marshals as a bare
+// string — the legacy wire shape — not as a full {"type":"string",...} object.
+// This preserves backward-compat for consumers (go-wp, vaelor) reading
+// params as map[string]string.
+func TestParamsMap_LegacyShapeRoundTrip(t *testing.T) {
+	pm := ParamsMap{
+		"webhook_path": ParamSpec{Type: ParamTypeString, Description: "/hook/v1"},
+	}
+	b, err := json.Marshal(pm)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(b)
+	want := `{"webhook_path":"/hook/v1"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+
+	// Round-trip: unmarshal back must restore the original ParamSpec.
+	var pm2 ParamsMap
+	if err := json.Unmarshal(b, &pm2); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	spec := pm2["webhook_path"]
+	if spec.Type != ParamTypeString || spec.Description != "/hook/v1" {
+		t.Errorf("round-trip: got %+v, want {Type:string, Description:/hook/v1}", spec)
+	}
+}
+
+// TestParamsMap_TypedShapeStaysTyped verifies that a typed ParamSpec
+// (non-string type, or with default/required/enum) marshals as the full
+// {"type":"int","default":6,...} object form, not a bare string.
+func TestParamsMap_TypedShapeStaysTyped(t *testing.T) {
+	six := any(float64(6))
+	pm := ParamsMap{
+		"count": ParamSpec{Type: ParamTypeInt, Default: six, Description: "items"},
+	}
+	b, err := json.Marshal(pm)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(b)
+	// Must contain type and default as object fields.
+	if !strings.Contains(got, `"type":"int"`) {
+		t.Errorf("got %s; want to contain \"type\":\"int\"", got)
+	}
+	if !strings.Contains(got, `"default"`) {
+		t.Errorf("got %s; want to contain \"default\"", got)
+	}
+	// Must NOT be a bare string.
+	if strings.HasPrefix(strings.TrimPrefix(got, `{"count":`), `"`) {
+		t.Errorf("got %s; typed spec must not marshal as a bare string", got)
+	}
+}
 
 // TestParamSpec_LegacyFormParsesAsStringType verifies that the legacy
 // string-only params form ("name": "Description text") is accepted and
