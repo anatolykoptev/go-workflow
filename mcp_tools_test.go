@@ -164,3 +164,20 @@ func TestMCPTools_List(t *testing.T) {
 		t.Errorf("wf_list: expected workflow ID in response, got: %s", listResult)
 	}
 }
+
+// TestRegisterMCPTools_ReturnsCount verifies that RegisterMCPTools returns
+// the actual number of tools it registers, not a hardcoded constant.
+func TestRegisterMCPTools_ReturnsCount(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	eng := NewEngine(s)
+	tmplStore := NewTemplateStore(t.TempDir())
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "count-test"}, nil)
+	n := RegisterMCPTools(server, MCPDeps{Engine: eng, Templates: tmplStore})
+
+	if n != 6 {
+		t.Fatalf("RegisterMCPTools returned %d, want 6", n)
+	}
+}

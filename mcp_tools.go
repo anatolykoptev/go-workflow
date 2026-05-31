@@ -92,14 +92,21 @@ func errResult(msg string) (*mcp.CallToolResult, any, error) {
 	}, nil, nil
 }
 
-// RegisterMCPTools registers all 6 workflow MCP tools on the given server.
-func RegisterMCPTools(server *mcp.Server, deps MCPDeps) {
-	registerWFCreate(server, deps)
-	registerWFStatus(server, deps)
-	registerWFApprove(server, deps)
-	registerWFList(server, deps)
-	registerWFCancel(server, deps)
-	registerWFTemplates(server, deps)
+// RegisterMCPTools registers all workflow MCP tools on the given server
+// and returns the number of tools registered.
+func RegisterMCPTools(server *mcp.Server, deps MCPDeps) int {
+	tools := [...]func(*mcp.Server, MCPDeps){
+		registerWFCreate,
+		registerWFStatus,
+		registerWFApprove,
+		registerWFList,
+		registerWFCancel,
+		registerWFTemplates,
+	}
+	for _, fn := range tools {
+		fn(server, deps)
+	}
+	return len(tools)
 }
 
 func registerWFCreate(server *mcp.Server, deps MCPDeps) {
