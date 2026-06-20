@@ -1,0 +1,24 @@
+name: release-please
+
+# Conventional-commit-driven versioning only (tag + GitHub release + changelog).
+# go-workflow is a library — there are no binaries to build, so this is the
+# entire release pipeline. Runs on GitHub-hosted runners (free for public repos).
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          target-branch: main
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
