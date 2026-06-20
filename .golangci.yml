@@ -76,7 +76,7 @@ linters:
           - gosec
           - gocognit
           - cyclop
-      # Inherited complex code from an internal package — refactor in future
+      # Complexity exclusions for n8n conversion code — to be refactored
       - path: n8n_convert\.go
         linters:
           - gocognit

@@ -3,7 +3,7 @@
 ## Positioning
 
 go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for Go**. No other project combines all of:
-- Minimal dependencies: pgx/v5, go-kit, go-mcpserver, OTel, sqlx, modernc.org/sqlite (with JSON file persistence as the default, zero-dep mode)
+- Minimal dependencies (9 direct): pgx/v5, go-kit, go-mcpserver, OTel, sqlx, modernc.org/sqlite — JSON file persistence is the default; the SQL and OTel backends are optional
 - LLM/Agent/A2A step types as first-class citizens
 - n8n workflow import compatibility
 - Embeddable as a Go library (no server process)
@@ -25,7 +25,7 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | **LLM steps** | StepLLM | — | — | core | core | — | LLM_TEXT_COMPLETE | — | — | — | — |
 | **Agent steps** | StepAgent, StepA2A | — | — | agent nodes | — | — | — | — | — | — | — |
 | **Streaming** | token-level callback | — | — | token-level | token-level | — | — | — | — | — | — |
-| **Cost tracking** | — | — | — | LangSmith | built-in | — | — | — | — | — | — |
+| **Cost tracking** | built-in | — | — | LangSmith | built-in | — | — | — | — | — | — |
 | **n8n compat** | aliases+import | — | — | — | — | — | — | — | — | — | — |
 | **Watchdog** | auto-recover | — | ticker service | — | — | — | — | — | — | — | — |
 | **Security policy** | MaxSteps/Duration/Tools | RBAC/namespaces | — | — | — | workspace | RBAC | — | — | — | — |
@@ -43,11 +43,11 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | Avg func complexity | 4.18 | 2.81 |
 | Test ratio | 22% | 27% |
 | Doc ratio | 49% | 21% |
-| External deps | 8 | 77 |
+| External deps | 9 | 77 |
 | Interfaces | 17 | 34 |
 | Grade | B | B |
 
-**go-workflow wins**: error handling (structured `ValidationError` with StepID/Field context), workflow validation (cycle detection, dep checks), security policies, built-in metrics, AI step types, n8n compat, zero external deps.
+**go-workflow wins**: error handling (structured `ValidationError` with StepID/Field context), workflow validation (cycle detection, dep checks), security policies, built-in metrics, AI step types, n8n compat, minimal deps (9 direct).
 
 **go-workflows wins**: lower avg complexity (2.81 vs 4.18), event-sourced coroutine model (superior fault tolerance), tester package with activity/sub-workflow mocking, multi-backend persistence (memory/SQLite/MySQL/PG/Redis), workflow/activity worker separation.
 
@@ -61,7 +61,7 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | Total LOC | 6,312 | 163,665 |
 | Avg func complexity | 4.18 | 4.24 |
 | Error handling ratio | 39% | 54% |
-| External deps | 8 | 300 |
+| External deps | 9 | 300 |
 | Interfaces | 17 | 119 |
 | Grade | B | C |
 
@@ -81,10 +81,10 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | Test ratio | 22% | 38% |
 | Doc ratio | 49% | 56% |
 | Error handling ratio | 39% | 57% |
-| External deps | 8 | 29 |
+| External deps | 9 | 29 |
 | Grade | B | B |
 
-**go-workflow wins**: workflow validation, security policies, AI step types, n8n compat, zero deps, lower complexity. DBOS has no validation, no security policies, no transform steps.
+**go-workflow wins**: workflow validation, security policies, AI step types, n8n compat, minimal deps (9 direct), lower complexity. DBOS has no validation, no security policies, no transform steps.
 
 **DBOS wins**: idempotent step execution via `checkOperationExecution` + `recordOperationResult` (crash-safe), `WorkflowQueue` with worker/global concurrency + priority + rate limiting, persistent metrics storage, higher test ratio (38% vs 22%), richer error wrapping.
 
