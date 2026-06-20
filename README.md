@@ -31,8 +31,8 @@ Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pl
 ```go
 engine := workflow.NewEngine(store,
     workflow.WithMCPServers(map[string]string{
-        "go-wp":     "http://127.0.0.1:8894/mcp",
-        "go-search": "http://127.0.0.1:8890/mcp",
+        "my-tools":       "http://127.0.0.1:8080/mcp",
+        "search-service": "http://127.0.0.1:8081/mcp",
     }),
     workflow.WithLLMClient(llmClient),
 )
@@ -64,16 +64,16 @@ Connect to any MCP server. Tools are auto-discovered via `ListTools`.
 ```go
 engine := workflow.NewEngine(store,
     workflow.WithMCPServers(map[string]string{
-        "wordpress": "http://127.0.0.1:8894/mcp",
-        "search":    "http://127.0.0.1:8890/mcp",
-        "browser":   "http://127.0.0.1:8901/mcp",
+        "my-tools":       "http://127.0.0.1:8080/mcp",
+        "search-service": "http://127.0.0.1:8081/mcp",
+        "browser":        "http://127.0.0.1:8082/mcp",
     }),
 )
 
 // Steps reference tools by name — routing is automatic:
-// "wp_post"       → wordpress server
-// "smart_search"  → search server
-// "fetch_smart"   → browser server
+// "create_item"   → my-tools server
+// "smart_search"  → search-service server
+// "fetch_page"    → browser server
 ```
 
 `MCPToolRunner` handles lazy connection, tool discovery, and multi-server routing. Combined with local `ToolRunner` via `MultiToolRunner`.

@@ -81,7 +81,7 @@ linters:
           - goconst
           - gocognit
           - cyclop
-      # Inherited complex code from Vaelor — refactor in v0.2+
+      # Inherited complex code — refactor in v0.2+
       - path: n8n_compat\.go
         linters:
           - gocognit

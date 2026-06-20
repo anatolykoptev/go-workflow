@@ -1,12 +1,11 @@
 # go-workflow Roadmap
 
-## v0.1.0 — Extraction (done)
-- [x] Extract from Vaelor pkg/workflow
-- [x] Replace Vaelor deps with local interfaces (MessagePublisher, LLMProvider)
+## v0.1.0 — Core Engine (done)
+- [x] Standalone DAG workflow engine with 15 step types
+- [x] Local interfaces (MessagePublisher, LLMProvider) — no external service deps
 - [x] Functional options for Engine construction
 - [x] slog for logging (injected)
 - [x] All 77 tests passing, 0 lint issues
-- [x] Vaelor migrated to go-workflow
 
 ## v0.2.0 — Production Retry & Timeout
 
@@ -32,7 +31,7 @@ Inspired by: go-workflows (multi-backend), DBOS (Postgres transactional checkpoi
 
 Inspired by: Hatchet (TriggeredByCron/ByEvent), Inngest (waitForEvent with match expression).
 
-- [x] Extract cron/scheduler from Vaelor pkg/cron
+- [x] Cron/scheduler engine with cron expressions and interval triggers
 - [x] Time-based triggers: `at` (one-shot), `every` (interval), `cron` (expression)
 - [x] Event-based triggers: hook event → auto-start workflow
 - [x] `WaitForEvent` step type: suspend until matching event arrives (with timeout)

@@ -20,7 +20,7 @@ func TestConvertN8n_SEOMaintenance(t *testing.T) {
     },
     {
       "parameters": {
-        "method": "POST", "url": "={{ $env.VAELOR_API_URL }}/tools/execute",
+        "method": "POST", "url": "={{ $env.WORKFLOW_TOOL_API_URL }}/tools/execute",
         "sendBody": true,
         "bodyParameters": {"parameters": [
           {"name": "tool", "value": "wp_seo_audit"},
@@ -68,7 +68,7 @@ func TestConvertN8n_SEOMaintenance(t *testing.T) {
 		t.Fatalf("steps = %d, want 3", len(tmpl.Steps))
 	}
 
-	// Step 1: SEO Audit — should be a direct tool call (Vaelor API detected)
+	// Step 1: SEO Audit — should be a direct tool call (tool API detected)
 	audit := tmpl.Steps[0]
 	if audit.ID != "audit" {
 		t.Errorf("step[0].id = %q, want 'audit'", audit.ID)
@@ -117,7 +117,7 @@ func TestConvertN8n_SEOMaintenance(t *testing.T) {
 	}
 }
 
-func TestConvertN8n_VaelorToolDetection(t *testing.T) {
+func TestConvertN8n_ToolAPIDetection(t *testing.T) {
 	data := []byte(`{
   "name": "Tool Call Test",
   "nodes": [
@@ -126,7 +126,7 @@ func TestConvertN8n_VaelorToolDetection(t *testing.T) {
       "id": "flush", "name": "Flush Cache",
       "type": "n8n-nodes-base.httpRequest",
       "parameters": {
-        "method": "POST", "url": "={{ $env.VAELOR_API_URL }}/tools/execute",
+        "method": "POST", "url": "={{ $env.WORKFLOW_TOOL_API_URL }}/tools/execute",
         "sendBody": true,
         "bodyParameters": {"parameters": [
           {"name": "tool", "value": "wp_flush_cache"},

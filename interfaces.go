@@ -2,7 +2,7 @@ package workflow
 
 import "context"
 
-// Hook event constants (extracted from Vaelor pkg/hooks).
+// Hook event constants.
 const (
 	EventWorkflowStarted       = "workflow_started"
 	EventWorkflowCompleted     = "workflow_completed"

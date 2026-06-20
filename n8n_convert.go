@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-// ConvertN8nToTemplate parses an n8n workflow JSON and converts it to a Vaelor Template.
+// ConvertN8nToTemplate parses an n8n workflow JSON and converts it to a workflow Template.
 func ConvertN8nToTemplate(data []byte) (*Template, error) {
 	var n8n N8nWorkflow
 	if err := json.Unmarshal(data, &n8n); err != nil {
@@ -78,7 +78,7 @@ func convertNodes(nodes []N8nNode, nameToID map[string]string, dependsOn map[str
 	return steps, triggerParams
 }
 
-// ConvertN8nFile reads an n8n JSON file and converts it to a Vaelor Template.
+// ConvertN8nFile reads an n8n JSON file and converts it to a workflow Template.
 func ConvertN8nFile(path string) (*Template, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -122,7 +122,7 @@ func convertNode(node *N8nNode, nodeID string, deps []string, nameToID map[strin
 	}
 }
 
-// mapNodeToStep maps an n8n node type to a Vaelor step kind and config.
+// mapNodeToStep maps an n8n node type to a step kind and config.
 func mapNodeToStep(node *N8nNode, nameToID map[string]string) (StepKind, map[string]any) {
 	switch node.Type {
 	case "n8n-nodes-base.httpRequest":
