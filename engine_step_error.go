@@ -94,7 +94,10 @@ func (e *Engine) handleStepError(workflowID, stepID string, step *Step, w *Workf
 
 	if didRetry, attempt := e.tryRetry(workflowID, stepID, step, errMsg, endedAt); didRetry {
 		e.getMetrics().StepsRetried.Add(1)
-		delay := calculateBackoff(step.GetRetryDelayMS(), attempt, step.GetBackoffMultiplier(), step.GetMaxDelayMS())
+		// Apply jitter to avoid thundering herd on correlated retries.
+		// retryAfterFloor honors upstream Retry-After hints (e.g. 429 responses).
+		delay := calculateBackoffWithJitter(step.GetRetryDelayMS(), attempt, step.GetBackoffMultiplier(), step.GetMaxDelayMS())
+		delay = retryAfterFloor(delay, execErr)
 		e.log().Info("step retrying",
 			"component", "workflow",
 			"workflow", workflowID,

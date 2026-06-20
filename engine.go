@@ -62,6 +62,8 @@ type Engine struct {
 	eventLog           *EventLog
 	costModel          map[string]ModelPrice
 	budgetUSD          float64 // 0 = no budget
+	rateLimits         *rateLimitRegistry
+	breakers           *breakerRegistry
 	tracerProvider     trace.TracerProvider
 	tracer             trace.Tracer
 	stepCache          StepCache
@@ -81,6 +83,7 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		metrics:   GlobalMetrics,
 		logger:    slog.Default(),
 		costModel: DefaultCostModel,
+		breakers:  &breakerRegistry{},
 		executors: map[StepKind]StepExecutor{
 			StepCondition: NewConditionExecutor(),
 			StepApproval:  NewApprovalExecutor(),
@@ -113,6 +116,22 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	}
 	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
 		ex.engine = e
+	}
+
+	// Wire engine-scoped breaker registry into all outbound executors.
+	// This keeps breaker state per-Engine (not global), preventing test bleed.
+	if ex, ok := e.executors[StepTool].(*ToolExecutor); ok {
+		ex.breakers = e.breakers
+		setMCPBreakers(ex.runner, e.breakers)
+	}
+	if ex, ok := e.executors[StepAgent].(*AgentExecutor); ok {
+		ex.breakers = e.breakers
+	}
+	if ex, ok := e.executors[StepA2A].(*A2AExecutor); ok {
+		ex.breakers = e.breakers
+	}
+	if ex, ok := e.executors[StepVision].(*VisionExecutor); ok {
+		ex.breakers = e.breakers
 	}
 
 	// Wire ToolRunner into LLMExecutor for tool calling

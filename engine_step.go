@@ -83,6 +83,14 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 	// downstream so child operations (HTTP, MCP) join the same trace.
 	spanCtx, span := e.startStepSpan(ctx, w, step)
 	execStart := time.Now()
+	// QPS rate limit (opt-in): check before calling the executor.
+	if e.rateLimits != nil {
+		provider := stepProviderKey(step)
+		if limitErr := e.rateLimits.check(provider); limitErr != nil {
+			finishStepSpan(span, step, 0, false, limitErr)
+			return limitErr
+		}
+	}
 	execErr := executor.Execute(spanCtx, step, w)
 	endedAt := time.Now().UnixMilli()
 	durationMS := time.Since(execStart).Milliseconds()

@@ -14,8 +14,9 @@ type A2ACaller interface {
 
 // A2AExecutor delegates a step to a remote A2A agent.
 type A2AExecutor struct {
-	caller  A2ACaller
-	metrics *Metrics
+	caller   A2ACaller
+	metrics  *Metrics
+	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
 func NewA2AExecutor(caller A2ACaller, metrics *Metrics) *A2AExecutor {
@@ -42,7 +43,12 @@ func (e *A2AExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) err
 		defer cancel()
 	}
 
-	result, err := e.caller.Call(ctx, agentID, message)
+	var result string
+	err := e.breakers.call("a2a:"+agentID, func() error {
+		var callErr error
+		result, callErr = e.caller.Call(ctx, agentID, message)
+		return callErr
+	})
 	if err != nil {
 		e.metrics.A2AStepsFailed.Add(1)
 		return fmt.Errorf("a2a %s: %w", agentID, err)

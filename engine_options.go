@@ -104,6 +104,19 @@ func setMCPHeaders(runner ToolRunner, serverID string, headers map[string]string
 	}
 }
 
+// setMCPBreakers wires a breakerRegistry into all MCPToolRunner instances
+// reachable through the given ToolRunner (handles multi-runner wrapping).
+func setMCPBreakers(runner ToolRunner, reg *breakerRegistry) {
+	switch r := runner.(type) {
+	case *MCPToolRunner:
+		r.breakers = reg
+	case *MultiToolRunner:
+		for _, nr := range r.runners {
+			setMCPBreakers(nr.runner, reg)
+		}
+	}
+}
+
 func WithAgentRunner(a AgentRunner) EngineOption {
 	return func(e *Engine) {
 		e.executors[StepAgent] = NewAgentExecutor(a, e.metrics)
