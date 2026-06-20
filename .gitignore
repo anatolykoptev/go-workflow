@@ -23,3 +23,12 @@ go.work.sum
 # OS
 .DS_Store
 Thumbs.db
+
+# Tool artifacts
+.code-review-graph/
+
+# Test coverage
+coverage.out
+
+# Operator-internal AI context
+CLAUDE.md
