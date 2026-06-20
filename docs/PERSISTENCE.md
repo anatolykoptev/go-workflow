@@ -153,7 +153,8 @@ SQL migrations are embedded in the binary via `//go:embed` and applied automatic
 ```
 store/migrate/
 ├── postgres/
-│   └── 001_init.sql
+│   ├── 001_init.sql
+│   └── 002_step_queue.sql
 └── sqlite/
     └── 001_init.sql
 ```

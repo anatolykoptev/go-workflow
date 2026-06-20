@@ -2,7 +2,9 @@
 
 ## Reporting
 
-Email security issues to the maintainer rather than filing public issues. Coordinate disclosure
+Report vulnerabilities via GitHub Security Advisories: https://github.com/anatolykoptev/go-workflow/security/advisories/new
+
+For general questions, email the maintainer rather than filing public issues. Coordinate disclosure
 windows for any vulnerability that could affect downstream consumers.
 
 ## Dependency policy
@@ -11,7 +13,7 @@ Application dependencies are kept current via `go list -m -u all` review at each
 The current third-party set is pinned in `go.mod`/`go.sum`; transitive vulnerabilities are
 checked with `govulncheck ./...` before each release tag.
 
-## Residual risks (M2 / v0.11.0)
+## Residual risks (v0.13.x or later — Last checked: 2026-06)
 
 `govulncheck ./...` reports 8 vulnerabilities in the Go standard library shipped with the
 host toolchain (`go1.26`, fixed in `go1.26.1`/`go1.26.2`):

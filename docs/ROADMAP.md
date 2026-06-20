@@ -5,7 +5,7 @@
 - [x] Local interfaces (MessagePublisher, LLMProvider) — no external service deps
 - [x] Functional options for Engine construction
 - [x] slog for logging (injected)
-- [x] All 77 tests passing, 0 lint issues
+- [x] All tests passing, 0 lint issues
 
 ## v0.2.0 — Production Retry & Timeout
 
@@ -34,7 +34,7 @@ Inspired by: Hatchet (TriggeredByCron/ByEvent), Inngest (waitForEvent with match
 - [x] Cron/scheduler engine with cron expressions and interval triggers
 - [x] Time-based triggers: `at` (one-shot), `every` (interval), `cron` (expression)
 - [x] Event-based triggers: hook event → auto-start workflow
-- [x] `WaitForEvent` step type: suspend until matching event arrives (with timeout)
+- [ ] `WaitForEvent` step type: suspend until matching event arrives (with timeout) — planned, not yet implemented
 - [x] Trigger→workflow auto-start with parameter injection
 
 ## v0.5.0 — Observability

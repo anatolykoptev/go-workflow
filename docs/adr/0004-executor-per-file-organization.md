@@ -5,11 +5,11 @@
 
 ## Context
 
-The original `executors.go` file contained 625 lines spanning 9 different executor types (Function, Foreach, Conditional, etc.). This violated the Single Responsibility Principle and made navigation, testing, and maintenance difficult. The file was a god file that mixed distinct concerns.
+The original executor logic was consolidated in a single file, violating the Single Responsibility Principle. The codebase spans multiple executor types: agent, a2a, approval, branchall, condition, foreach, image, llm, message, mcp, subworkflow, suspend, tool, transform, and vision. This made navigation, testing, and maintenance difficult.
 
 ## Decision
 
-Organize executors following a `executor_<kind>.go` naming convention (e.g., `executor_function.go`, `executor_foreach.go`). Extract common utilities into `resolve.go` (dependency resolution, binding). Define the `StepExecutor` interface once in `interfaces.go`. Each executor file contains 30–140 lines focused on that executor's logic.
+Organize executors following a `executor_<kind>.go` naming convention (e.g., `executor_agent.go`, `executor_foreach.go`, `executor_llm.go`). Extract common utilities into `resolve.go` (dependency resolution, binding). Define the `StepExecutor` interface once in `interfaces.go`. Each executor file (e.g., `executor_tool.go`, `executor_agent.go`, `executor_vision.go`) contains 30–140 lines focused on that executor's logic. Step kinds supported: `StepAgent`, `StepTool`, `StepLLM`, `StepA2A`, `StepApproval`, `StepCondition`, `StepTransform`, `StepMessage`, `StepWorkflow`, `StepForEach`, `StepBranchAll`, `StepSuspend`, `StepNoop`, `StepImage`, `StepVision`.
 
 ## Consequences
 

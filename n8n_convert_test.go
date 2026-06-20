@@ -11,7 +11,7 @@ import (
 
 func TestConvertN8n_SEOMaintenance(t *testing.T) {
 	data := []byte(`{
-  "name": "Piter SEO Maintenance",
+  "name": "Example SEO Maintenance",
   "nodes": [
     {
       "parameters": {"rule": {"interval": [{"field": "cronExpression", "expression": "0 3 * * 1"}]}},
@@ -51,7 +51,7 @@ func TestConvertN8n_SEOMaintenance(t *testing.T) {
     "SEO Audit": {"main": [[{"node": "Has Issues?", "type": "main", "index": 0}]]},
     "Has Issues?": {"main": [[{"node": "Telegram Report", "type": "main", "index": 0}], []]}
   },
-  "tags": [{"name": "seo"}, {"name": "piter.now"}]
+  "tags": [{"name": "seo"}, {"name": "example.com"}]
 }`)
 
 	tmpl, err := ConvertN8nToTemplate(data)
@@ -59,8 +59,8 @@ func TestConvertN8n_SEOMaintenance(t *testing.T) {
 		t.Fatalf("ConvertN8nToTemplate: %v", err)
 	}
 
-	if tmpl.Name != "Piter SEO Maintenance" {
-		t.Errorf("name = %q, want 'Piter SEO Maintenance'", tmpl.Name)
+	if tmpl.Name != "Example SEO Maintenance" {
+		t.Errorf("name = %q, want 'Example SEO Maintenance'", tmpl.Name)
 	}
 
 	// Should have 3 steps (trigger is skipped)
