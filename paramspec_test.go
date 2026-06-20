@@ -103,7 +103,7 @@ func TestParamSpec_DeprecationWarnFiresOnce(t *testing.T) {
 // TestParamsMap_LegacyShapeRoundTrip verifies that a trivially-legacy
 // ParamSpec (Type=string, no default/required/enum) marshals as a bare
 // string — the legacy wire shape — not as a full {"type":"string",...} object.
-// This preserves backward-compat for consumers (go-wp, vaelor) reading
+// This preserves backward-compat for downstream consumers reading
 // params as map[string]string.
 func TestParamsMap_LegacyShapeRoundTrip(t *testing.T) {
 	pm := ParamsMap{
@@ -461,16 +461,19 @@ func TestParamSpec_RequiredParamMissingAtInstantiate(t *testing.T) {
 	}
 }
 
-// TestParamSpec_GoWowaTemplatesParseClean is a backward-compat smoke test that
-// parses every *.json template from the go-wowa templates directory (which uses
+// TestParamSpec_SmokeTemplatesParseClean is a backward-compat smoke test that
+// parses every *.json template from a local templates directory (which uses
 // the legacy string-description params form and @@int markers) and verifies
-// they still load without error. Skipped when the directory is not present
-// (CI or other checkout locations).
-func TestParamSpec_GoWowaTemplatesParseClean(t *testing.T) {
-	dir := "/home/krolik/src/go-wowa/templates"
+// they still load without error. Skipped when WORKFLOW_SMOKE_TEMPLATES_DIR is
+// not set or the directory is not present (CI or other checkout locations).
+func TestParamSpec_SmokeTemplatesParseClean(t *testing.T) {
+	dir := os.Getenv("WORKFLOW_SMOKE_TEMPLATES_DIR")
+	if dir == "" {
+		t.Skip("WORKFLOW_SMOKE_TEMPLATES_DIR not set, skipping smoke test")
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Skipf("go-wowa templates dir not found (%s), skipping smoke test: %v", dir, err)
+		t.Skipf("templates dir not found (%s), skipping smoke test: %v", dir, err)
 	}
 
 	parsed := 0
@@ -493,7 +496,7 @@ func TestParamSpec_GoWowaTemplatesParseClean(t *testing.T) {
 	if parsed == 0 {
 		t.Error("no templates were parsed (expected at least 1)")
 	}
-	t.Logf("parsed %d go-wowa templates cleanly", parsed)
+	t.Logf("parsed %d templates cleanly", parsed)
 }
 
 // findStep is a test helper that finds a step by ID in a workflow.

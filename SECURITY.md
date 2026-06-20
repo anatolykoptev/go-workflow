@@ -3,8 +3,7 @@
 ## Reporting
 
 Email security issues to the maintainer rather than filing public issues. Coordinate disclosure
-windows for any vulnerability that could affect downstream consumers (`vaelor`, `krolik-agent`,
-`go-wp`).
+windows for any vulnerability that could affect downstream consumers.
 
 ## Dependency policy
 

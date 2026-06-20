@@ -2,7 +2,7 @@
 
 Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.13.1** | Go 1.26 | [MIT License](LICENSE)
+**v0.13.1** | Go 1.26 | [Apache-2.0 License](LICENSE)
 
 ## Features
 
@@ -231,9 +231,3 @@ All external dependencies are injected via interfaces:
 ## Distributed Execution
 
 Dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue. Features: heartbeat protocol, concurrency limits, LISTEN/NOTIFY, graceful shutdown. Default `LocalDispatcher` preserves in-process execution (zero config change).
-
-## Consumers
-
-- **vaelor** — AI agent orchestrator (Telegram, Discord, A2A)
-- **krolik-agent** — lightweight Go agent
-- **go-wp** — WordPress content pipeline (planned)

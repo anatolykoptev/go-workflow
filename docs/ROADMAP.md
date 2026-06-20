@@ -67,7 +67,7 @@ Inspired by: LangGraph (state reducers, interrupt), Conductor (LLM task types), 
 - [x] LLM streaming: token-by-token callback from LLMProvider to caller
 - [x] LLM tool calling in workflow: LLM step can invoke tools, multi-turn within single step
 - [x] `interrupt_before/after`: declarative HITL — pause before/after named steps without code change
-- [x] MCP tool runner: call tools on remote MCP servers (go-wp, go-search, go-code, etc.) via ToolRunner interface
+- [x] MCP tool runner: call tools on remote MCP servers (wordpress-api, search-service, code-indexer, etc.) via ToolRunner interface
 - [x] Multi-runner routing: combine local and MCP tool runners with name-based dispatch
 
 ## v0.8.0 — Distributed Execution (done)
