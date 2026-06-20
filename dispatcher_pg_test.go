@@ -2,7 +2,10 @@ package workflow_test
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	workflow "github.com/anatolykoptev/go-workflow"
@@ -12,6 +15,35 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// requireTestDB validates that dsn refers to a database whose name contains "_test".
+// Returns a non-empty error string if the name looks like a production database.
+func requireTestDB(dsn string) string {
+	if dsn == "" {
+		return ""
+	}
+	// URL format: postgres://user:pass@host/dbname[?params]
+	if u, err := url.Parse(dsn); err == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
+		dbName := strings.TrimPrefix(u.Path, "/")
+		if idx := strings.IndexByte(dbName, '?'); idx >= 0 {
+			dbName = dbName[:idx]
+		}
+		if dbName != "" && !strings.Contains(dbName, "_test") {
+			return fmt.Sprintf("refusing to connect: DB name %q must contain \"_test\" (set GO_WORKFLOW_TEST_DSN to a test database)", dbName)
+		}
+		return ""
+	}
+	// Key-value format: "host=... dbname=go_workflow_test ..."
+	for _, part := range strings.Fields(dsn) {
+		if kv := strings.SplitN(part, "=", 2); len(kv) == 2 && kv[0] == "dbname" {
+			if !strings.Contains(kv[1], "_test") {
+				return fmt.Sprintf("refusing to connect: DB name %q must contain \"_test\" (set GO_WORKFLOW_TEST_DSN to a test database)", kv[1])
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
 // testPgDSN returns a Postgres DSN for integration tests.
 // Skips the test if Postgres is unreachable.
 func testPgDSN(t *testing.T) string {
@@ -20,6 +52,9 @@ func testPgDSN(t *testing.T) string {
 	dsn := os.Getenv("GO_WORKFLOW_TEST_DSN")
 	if dsn == "" {
 		dsn = "postgres://localhost:5432/go_workflow_test?sslmode=disable"
+	}
+	if msg := requireTestDB(dsn); msg != "" {
+		t.Fatalf("test-DB isolation guard: %s", msg)
 	}
 
 	db, err := sqlx.Open("pgx", dsn)
