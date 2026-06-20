@@ -19,7 +19,7 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | **Embedded** | yes | no | no | yes | no | no | no | no | yes | yes | no |
 | **Persistence** | JSON files | Cassandra/PG | Postgres | Pluggable | Postgres | Postgres | Postgres | Postgres | PG/SQLite/Redis | Postgres | WAL journal |
 | **DAG model** | DependsOn | code (futures) | Parents/Children | Graph+cycles | visual DAG | visual flow | JSON/YAML | step chains | code (futures) | code (steps) | code (ctx.Run) |
-| **Retry** | max + delay_ms | exponential backoff | exponential backoff | manual | workflow-level | conditional | configurable | auto | configurable | per-step | auto |
+| **Retry** | max + delay_ms + jitter + Retry-After | exponential backoff | exponential backoff | manual | workflow-level | conditional | configurable | auto | configurable | per-step | auto |
 | **Fan-out** | parallel DependsOn | workflow.Go() | child workflows | Pregel superstep | Iteration node | branchall | fork task | step loops | sub-workflows | manual | virtual objects |
 | **Human-in-loop** | StepApproval | signals | — | interrupt() | HumanApproval node | Approval step | Human Task | waitForEvent | — | — | — |
 | **LLM steps** | StepLLM | — | — | core | core | — | LLM_TEXT_COMPLETE | — | — | — | — |
@@ -67,7 +67,8 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 
 **go-workflow wins**: workflow validation (Hatchet has none — no cycle detection, no dep checks), security policies (tool permissions, step budgets), functional options pattern for engine config, secret masking, n8n compat. Hatchet uses `panic` for missing actions — go-workflow returns errors.
 
-**Hatchet wins**: `RetryBackoffFactor` + `RetryMaxBackoff` on Step struct (exponential backoff), `ScheduleTimeout` per step, `IsDurable` flag, `syncx.Map` for concurrent access (vs RWMutex), Postgres persistence with strong typing (uuid, pgtype), gRPC worker dispatch.
+**Hatchet wins**: `ScheduleTimeout` per step, `IsDurable` flag, `syncx.Map` for concurrent access (vs RWMutex), Postgres persistence with strong typing (uuid, pgtype), gRPC worker dispatch. *(Exponential backoff + jitter + Retry-After: now present in go-workflow — no longer a gap.)*
+
 
 **Key pattern to adopt**: Hatchet's Step struct fields — `RetryBackoffFactor`, `RetryMaxBackoff`, `ScheduleTimeout` — directly inform go-workflow's roadmap.
 
@@ -172,7 +173,7 @@ Durable async/await as sidecar. WASM-based journaling. **No determinism constrai
 ### Priority 1: Production Reliability (patterns to consider)
 | Pattern | Source | Effort | Impact |
 |---------|--------|--------|--------|
-| Exponential backoff in RetryPolicy | Hatchet, Temporal | S | High |
+| ~~Exponential backoff in RetryPolicy~~ | Hatchet, Temporal | ~~S~~ | **DONE** — `calculateBackoff` in `types_helpers.go`; jitter + Retry-After added in v0.x.x |
 | Per-step timeout (not just global) | Temporal, Windmill | S | High |
 | `StepDeadLettered` status | Hatchet | XS | Medium |
 | Conditional retry (retry_on/skip_on error patterns) | Windmill | S | Medium |
