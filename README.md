@@ -2,7 +2,13 @@
 
 Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.13.1** | Go 1.26 | [MIT License](LICENSE)
+**v0.13.1** | Go 1.26 | [Apache-2.0 License](LICENSE)
+
+## Installation
+
+```
+go get github.com/anatolykoptev/go-workflow
+```
 
 ## Features
 
@@ -31,8 +37,8 @@ Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pl
 ```go
 engine := workflow.NewEngine(store,
     workflow.WithMCPServers(map[string]string{
-        "go-wp":     "http://127.0.0.1:8894/mcp",
-        "go-search": "http://127.0.0.1:8890/mcp",
+        "content-server": "http://127.0.0.1:8080/mcp",
+        "search-service": "http://127.0.0.1:8081/mcp",
     }),
     workflow.WithLLMClient(llmClient),
 )
@@ -41,14 +47,14 @@ engine.RecoverAll(ctx)
 
 wf := workflow.NewWorkflow("wf-1", "Content Pipeline", "ai:claude", []workflow.Step{
     {ID: "research", Kind: workflow.StepTool, Config: map[string]any{
-        "tool": "wp_research",
-        "args": map[string]any{"topic": "смотровые площадки", "count": 12},
+        "tool": "search_web",
+        "args": map[string]any{"topic": "best viewpoints in the city", "count": 12},
     }},
     {ID: "select", Kind: workflow.StepApproval, Config: map[string]any{
-        "message": "Review places and select top 12",
+        "message": "Review results and select top 12",
     }, DependsOn: []string{"research"}},
     {ID: "images", Kind: workflow.StepTool, Config: map[string]any{
-        "tool": "wp_image",
+        "tool": "get_images",
         "args": map[string]any{"action": "batch"},
     }, DependsOn: []string{"select"}},
 })
@@ -64,16 +70,16 @@ Connect to any MCP server. Tools are auto-discovered via `ListTools`.
 ```go
 engine := workflow.NewEngine(store,
     workflow.WithMCPServers(map[string]string{
-        "wordpress": "http://127.0.0.1:8894/mcp",
-        "search":    "http://127.0.0.1:8890/mcp",
-        "browser":   "http://127.0.0.1:8901/mcp",
+        "my-tools":       "http://127.0.0.1:8080/mcp",
+        "search-service": "http://127.0.0.1:8081/mcp",
+        "browser":        "http://127.0.0.1:8082/mcp",
     }),
 )
 
 // Steps reference tools by name — routing is automatic:
-// "wp_post"       → wordpress server
-// "smart_search"  → search server
-// "fetch_smart"   → browser server
+// "create_item"   → my-tools server
+// "smart_search"  → search-service server
+// "fetch_page"    → browser server
 ```
 
 `MCPToolRunner` handles lazy connection, tool discovery, and multi-server routing. Combined with local `ToolRunner` via `MultiToolRunner`.
@@ -102,19 +108,19 @@ See [`docs/template.schema.json`](docs/template.schema.json) for the full schema
 
   Then `"count": "{{count}}"` in a step config becomes `"count": 12` after substitution (bare integer).
 
-- **`"@@int:KEY"` / `"@@bool:KEY"` / `"@@float:KEY"`** *(deprecated since v0.14)* — typed substitution via magic markers. Quotes are stripped after substitution. Emits a deprecation log per match pointing to the typed ParamSpec form above.
+- **`"@@int:KEY"` / `"@@bool:KEY"` / `"@@float:KEY"`** *(deprecated since v0.13)* — typed substitution via magic markers. Quotes are stripped after substitution. Emits a deprecation log per match pointing to the typed ParamSpec form above.
 
 ```json
 {
-  "name": "Create collection: {{topic}}",
+  "name": "Content pipeline: {{topic}}",
   "params": {"topic": "Article topic", "count": "Number of places", "verbose": "Verbose log flag"},
   "defaults": {"count": "12", "verbose": "false"},
   "steps": [
-    {"id": "research", "kind": "tool", "config": {"tool": "wp_research", "args": {"topic": "{{topic}}", "count": "@@int:count", "verbose": "@@bool:verbose"}}},
-    {"id": "select",   "kind": "approval", "config": {"message": "Select places"}, "depends_on": ["research"]},
-    {"id": "enrich",   "kind": "tool", "config": {"tool": "wp_enrich"}, "depends_on": ["select"]},
+    {"id": "research", "kind": "tool", "config": {"tool": "search_web", "args": {"topic": "{{topic}}", "count": "@@int:count", "verbose": "@@bool:verbose"}}},
+    {"id": "select",   "kind": "approval", "config": {"message": "Select items"}, "depends_on": ["research"]},
+    {"id": "enrich",   "kind": "tool", "config": {"tool": "update_metadata"}, "depends_on": ["select"]},
     {"id": "compose",  "kind": "approval", "config": {"message": "Write content"}, "depends_on": ["enrich"]},
-    {"id": "publish",  "kind": "tool", "config": {"tool": "wp_post"}, "depends_on": ["compose"]}
+    {"id": "publish",  "kind": "tool", "config": {"tool": "create_post"}, "depends_on": ["compose"]}
   ]
 }
 ```
@@ -122,13 +128,20 @@ See [`docs/template.schema.json`](docs/template.schema.json) for the full schema
 ```go
 ts := workflow.NewTemplateStore("/path/to/templates")
 wf, _ := ts.Instantiate("create-collection", "wf-123", "ai:claude", map[string]any{
-    "topic":   "смотровые площадки",
+    "topic":   "city viewpoints",
     "count":   "15",     // typed @@int:count emits bare 15 in JSON
     "verbose": "true",   // typed @@bool:verbose emits bare true
 })
 ```
 
 After substitution `args.count` is the JSON integer `15` (not the string `"15"`); `args.verbose` is the JSON boolean `true`. Coercion errors (e.g. `@@int:` against a non-numeric value) surface from `ResolveRefsErr`; the legacy `ResolveRefs` logs and continues for backward compat.
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `WORKFLOW_TOOL_API_URL` | Base URL of the tool API server. HTTP request nodes that call `/tools/execute` or `/agent/run` on this URL are detected and converted to native tool/agent steps by the n8n importer. Example: `http://127.0.0.1:8080` |
+
 
 ## Approval Flow
 
@@ -227,13 +240,13 @@ All external dependencies are injected via interfaces:
 | `StepDispatcher` | Route steps to local/remote execution |
 | `StepWorkerQueue` | Distributed work queue |
 | `StepReaper` | Reclaim steps from dead workers |
+| `StepExecutor` | Execute a single workflow step |
+| `StepCache` | Cache deterministic step results |
+| `StepEnqueuer` | Enqueue steps for distributed execution |
+| `ImageRenderer` | Render HTML to image formats |
+| `SubWorkflowRunner` | Run nested sub-workflows |
+| `VisionCapable` | Multimodal LLM capability probe |
 
 ## Distributed Execution
 
 Dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue. Features: heartbeat protocol, concurrency limits, LISTEN/NOTIFY, graceful shutdown. Default `LocalDispatcher` preserves in-process execution (zero config change).
-
-## Consumers
-
-- **vaelor** — AI agent orchestrator (Telegram, Discord, A2A)
-- **krolik-agent** — lightweight Go agent
-- **go-wp** — WordPress content pipeline (planned)

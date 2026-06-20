@@ -7,7 +7,7 @@ import (
 
 // --- Expression conversion ---
 
-// convertN8nExpressions replaces n8n expression patterns with Vaelor context refs.
+// convertN8nExpressions replaces n8n expression patterns with tool context refs.
 func convertN8nExpressions(s string, nameToID map[string]string) string {
 	if s == "" {
 		return s
@@ -53,20 +53,20 @@ func convertN8nExpressions(s string, nameToID map[string]string) string {
 // --- HTTP request parameter extraction ---
 
 // convertHTTPRequest converts an HTTP Request node.
-// If it's calling the Vaelor API, extract the tool/agent call directly.
+// If it is calling the tool API (WORKFLOW_TOOL_API_URL), extract the tool/agent call directly.
 func convertHTTPRequest(node *N8nNode, nameToID map[string]string) (StepKind, map[string]any) {
 	urlStr, _ := node.Parameters["url"].(string)
 
-	if kind, config, ok := tryConvertVaelorAPI(node, urlStr, nameToID); ok {
+	if kind, config, ok := tryConvertToolAPI(node, urlStr, nameToID); ok {
 		return kind, config
 	}
 
 	return convertGenericHTTP(node, urlStr, nameToID)
 }
 
-func tryConvertVaelorAPI(node *N8nNode, urlStr string, nameToID map[string]string) (StepKind, map[string]any, bool) {
+func tryConvertToolAPI(node *N8nNode, urlStr string, nameToID map[string]string) (StepKind, map[string]any, bool) {
 	if strings.Contains(urlStr, "/tools/execute") {
-		toolName, toolArgs := extractVaelorToolCall(node)
+		toolName, toolArgs := extractToolCall(node)
 		if toolName != "" {
 			config := map[string]any{"tool": toolName}
 			if toolArgs != nil {
@@ -161,9 +161,9 @@ func extractN8nNameValueParams(node *N8nNode, key string, nameToID map[string]st
 	return result
 }
 
-// --- Vaelor API extraction helpers ---
+// --- tool API extraction helpers (WORKFLOW_TOOL_API_URL) ---
 
-func extractVaelorToolCall(node *N8nNode) (string, map[string]any) {
+func extractToolCall(node *N8nNode) (string, map[string]any) {
 	bodyParams, ok := node.Parameters["bodyParameters"].(map[string]any)
 	if !ok {
 		return "", nil

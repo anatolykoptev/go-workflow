@@ -89,7 +89,7 @@ const (
 	ToolHTTPRequest = "http_request"
 )
 
-// stepKindAliases maps n8n-compatible and convenience names to canonical Vaelor step kinds.
+// stepKindAliases maps n8n-compatible and convenience names to canonical step kinds.
 var stepKindAliases = map[StepKind]StepKind{
 	// n8n condition nodes
 	"if":     StepCondition,
@@ -138,7 +138,7 @@ var stepKindAliases = map[StepKind]StepKind{
 	"multimodal": StepVision,
 }
 
-// NormalizeStepKind resolves a step kind alias to the canonical Vaelor step kind.
+// NormalizeStepKind resolves a step kind alias to the canonical step kind.
 // Returns the input unchanged if it's already canonical or unrecognized.
 func NormalizeStepKind(kind StepKind) StepKind {
 	if canonical, ok := stepKindAliases[kind]; ok {

@@ -9,7 +9,7 @@ The engine originally supported only in-memory and file-based storage. Productio
 
 ## Decision
 
-Define a `StoreBackend` interface in the root `workflow` package (Get, Set, Delete, List, etc.). Provide three concrete implementations in the `store/` subpackage: FileBackend, SQLiteBackend, and PostgresBackend. Wrap all backends with a `WorkflowStore` that handles clone-on-entry/exit semantics and ensures isolation between workflow instances.
+Define a `StoreBackend` interface in the root `workflow` package with methods: `Save`, `Load`, `Delete`, `List`, `ListByOwner`, `FindByIdempotencyKey`, `Modify`, `Close`. Provide three concrete implementations in the `store/` subpackage: FileBackend, SQLiteBackend, and PostgresBackend. Wrap all backends with a `WorkflowStore` that handles clone-on-entry/exit semantics and ensures isolation between workflow instances.
 
 ## Consequences
 

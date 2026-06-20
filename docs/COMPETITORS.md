@@ -3,7 +3,7 @@
 ## Positioning
 
 go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for Go**. No other project combines all of:
-- Zero external dependencies (stdlib only, JSON file persistence)
+- Minimal dependencies (9 direct): pgx/v5, go-kit, go-mcpserver, OTel, sqlx, modernc.org/sqlite — JSON file persistence is the default; the SQL and OTel backends are optional
 - LLM/Agent/A2A step types as first-class citizens
 - n8n workflow import compatibility
 - Embeddable as a Go library (no server process)
@@ -24,8 +24,8 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 | **Human-in-loop** | StepApproval | signals | — | interrupt() | HumanApproval node | Approval step | Human Task | waitForEvent | — | — | — |
 | **LLM steps** | StepLLM | — | — | core | core | — | LLM_TEXT_COMPLETE | — | — | — | — |
 | **Agent steps** | StepAgent, StepA2A | — | — | agent nodes | — | — | — | — | — | — | — |
-| **Streaming** | — | — | — | token-level | token-level | — | — | — | — | — | — |
-| **Cost tracking** | — | — | — | LangSmith | built-in | — | — | — | — | — | — |
+| **Streaming** | token-level callback | — | — | token-level | token-level | — | — | — | — | — | — |
+| **Cost tracking** | built-in | — | — | LangSmith | built-in | — | — | — | — | — | — |
 | **n8n compat** | aliases+import | — | — | — | — | — | — | — | — | — | — |
 | **Watchdog** | auto-recover | — | ticker service | — | — | — | — | — | — | — | — |
 | **Security policy** | MaxSteps/Duration/Tools | RBAC/namespaces | — | — | — | workspace | RBAC | — | — | — | — |
@@ -38,16 +38,16 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 
 | Metric | go-workflow | go-workflows |
 |--------|-------------|-------------|
-| Files | 18 | 282 |
+| Files | 71 | 282 |
 | Total LOC | 6,312 | 31,838 |
 | Avg func complexity | 4.18 | 2.81 |
 | Test ratio | 22% | 27% |
 | Doc ratio | 49% | 21% |
-| External deps | 0 | 77 |
-| Interfaces | 9 | 34 |
+| External deps | 9 | 77 |
+| Interfaces | 17 | 34 |
 | Grade | B | B |
 
-**go-workflow wins**: error handling (structured `ValidationError` with StepID/Field context), workflow validation (cycle detection, dep checks), security policies, built-in metrics, AI step types, n8n compat, zero external deps.
+**go-workflow wins**: error handling (structured `ValidationError` with StepID/Field context), workflow validation (cycle detection, dep checks), security policies, built-in metrics, AI step types, n8n compat, minimal deps (9 direct).
 
 **go-workflows wins**: lower avg complexity (2.81 vs 4.18), event-sourced coroutine model (superior fault tolerance), tester package with activity/sub-workflow mocking, multi-backend persistence (memory/SQLite/MySQL/PG/Redis), workflow/activity worker separation.
 
@@ -57,34 +57,34 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 
 | Metric | go-workflow | Hatchet |
 |--------|-------------|---------|
-| Files | 18 | 749 |
+| Files | 71 | 749 |
 | Total LOC | 6,312 | 163,665 |
 | Avg func complexity | 4.18 | 4.24 |
 | Error handling ratio | 39% | 54% |
-| External deps | 0 | 300 |
-| Interfaces | 9 | 119 |
+| External deps | 9 | 300 |
+| Interfaces | 17 | 119 |
 | Grade | B | C |
 
 **go-workflow wins**: workflow validation (Hatchet has none — no cycle detection, no dep checks), security policies (tool permissions, step budgets), functional options pattern for engine config, secret masking, n8n compat. Hatchet uses `panic` for missing actions — go-workflow returns errors.
 
 **Hatchet wins**: `RetryBackoffFactor` + `RetryMaxBackoff` on Step struct (exponential backoff), `ScheduleTimeout` per step, `IsDurable` flag, `syncx.Map` for concurrent access (vs RWMutex), Postgres persistence with strong typing (uuid, pgtype), gRPC worker dispatch.
 
-**Key pattern to adopt**: Hatchet's Step struct fields — `RetryBackoffFactor`, `RetryMaxBackoff`, `ScheduleTimeout` — directly inform our v0.2 roadmap.
+**Key pattern to adopt**: Hatchet's Step struct fields — `RetryBackoffFactor`, `RetryMaxBackoff`, `ScheduleTimeout` — directly inform go-workflow's roadmap.
 
 ### go-workflow vs DBOS Transact Go
 
 | Metric | go-workflow | DBOS Go |
 |--------|-------------|---------|
-| Files | 18 | 42 |
+| Files | 71 | 42 |
 | Total LOC | 6,312 | 28,360 |
 | Avg func complexity | 4.18 | 6.04 |
 | Test ratio | 22% | 38% |
 | Doc ratio | 49% | 56% |
 | Error handling ratio | 39% | 57% |
-| External deps | 0 | 29 |
+| External deps | 9 | 29 |
 | Grade | B | B |
 
-**go-workflow wins**: workflow validation, security policies, AI step types, n8n compat, zero deps, lower complexity. DBOS has no validation, no security policies, no transform steps.
+**go-workflow wins**: workflow validation, security policies, AI step types, n8n compat, minimal deps (9 direct), lower complexity. DBOS has no validation, no security policies, no transform steps.
 
 **DBOS wins**: idempotent step execution via `checkOperationExecution` + `recordOperationResult` (crash-safe), `WorkflowQueue` with worker/global concurrency + priority + rate limiting, persistent metrics storage, higher test ratio (38% vs 22%), richer error wrapping.
 
@@ -97,12 +97,12 @@ go-workflow occupies a unique niche: **embedded AI-first DAG workflow engine for
 #### go-workflows (cschleiden/go-workflows) — 431 stars
 Temporal-inspired embedded engine. Pluggable backends (memory/SQLite/PG/Redis). Deterministic replay model — all Temporal constraints apply (no native goroutines, no `time.Now()`, no `select`).
 
-**vs go-workflow**: We win on simplicity (no determinism constraints), AI-native steps, n8n compat, validation, security. They win on durability (event sourcing replay), multi-backend persistence, lower complexity, better test mocking.
+**vs go-workflow**: go-workflow wins on simplicity (no determinism constraints), AI-native steps, n8n compat, validation, security. They win on durability (event sourcing replay), multi-backend persistence, lower complexity, better test mocking.
 
 #### DBOS Transact Go — 591 stars
 "Postgres IS the workflow engine." Each step = Postgres transaction. Automatic checkpointing via `checkOperationExecution` + `recordOperationResult`. No determinism constraints. `WorkflowQueue` with concurrency + priority + rate limiting.
 
-**vs go-workflow**: They win on durability (Postgres transactional checkpointing, crash-safe step idempotency), higher test coverage (38%), `WorkflowQueue` with rate limiting. We win on zero infrastructure, AI steps, security policy, workflow validation, lower complexity.
+**vs go-workflow**: Competitor wins on durability (Postgres transactional checkpointing, crash-safe step idempotency), higher test coverage (38%), `WorkflowQueue` with rate limiting. go-workflow wins on zero infrastructure, AI steps, security policy, workflow validation, lower complexity.
 
 ### Tier 2: Server-based Workflow Engines (Go)
 
@@ -118,7 +118,7 @@ Industry standard for durable execution. Event sourcing replay. Extremely reliab
 
 **Key insight**: `RetryBackoffFactor` + `RetryMaxBackoff` + `ScheduleTimeout` on Step struct. `DEAD_LETTERED` status for exhausted retries. `syncx.Map` for concurrent store access. Concurrency: semaphore + rate limiter per worker. 749 files / 163k LOC but lower grade (C) due to `panic` for missing actions and max complexity of 114.
 
-**vs go-workflow**: Hatchet has exponential backoff, per-step timeout, Postgres durability. We have workflow validation (Hatchet has zero!), security policies, AI-native steps, zero infrastructure, functional options config. Comparable complexity (4.18 vs 4.24) despite Hatchet being 26x larger.
+**vs go-workflow**: Hatchet has exponential backoff, per-step timeout, Postgres durability. go-workflow has workflow validation (Hatchet has zero!), security policies, AI-native steps, zero infrastructure, functional options config. Comparable complexity (4.18 vs 4.24) despite Hatchet being 26x larger.
 
 #### Inngest — 5k stars
 Event-driven workflow platform. `step.waitForEvent()` for durable HITL. Concurrency per-entity key.
@@ -136,14 +136,14 @@ Pregel-inspired state graph. Nodes = functions, edges = conditional transitions.
 3. `thread_id` isolation — one graph, many parallel execution threads
 4. Pluggable checkpointing interface (memory/SQLite/Postgres)
 
-**vs go-workflow**: LangGraph has better state management and checkpointing. We have Go performance (10-50x less orchestration overhead), n8n compat, security policy.
+**vs go-workflow**: LangGraph has better state management and checkpointing. go-workflow has Go performance (10-50x less orchestration overhead), n8n compat, security policy.
 
 #### Dify — 100k+ stars
 Visual workflow builder with LLM nodes, tool integration, knowledge retrieval. Path-based variable selector `['nodeId', 'field']`.
 
 **Key insight**: `HumanApproval` as first-class node type with PENDING/APPROVED/REJECTED states. Iteration node for parallel for-each. `.importlinter` for architectural layer protection.
 
-**vs go-workflow**: Dify has a visual editor and richer AI integration. We have Go embedding, better performance, code-first approach.
+**vs go-workflow**: Dify has a visual editor and richer AI integration. go-workflow has Go embedding, better performance, code-first approach.
 
 #### CrewAI — 45k stars
 Role-based multi-agent framework. 5.76x faster than LangGraph. "Flows" layer adds event-driven orchestration with `@listen`/`@start`/`@router` decorators.
@@ -167,9 +167,9 @@ Durable async/await as sidecar. WASM-based journaling. **No determinism constrai
 
 **Key insight**: Solves Temporal's main pain point. User writes normal Go code with `ctx.Run()` for durable operations. The server journals all I/O.
 
-## Patterns to Adopt
+## Patterns Worth Evaluating
 
-### Priority 1: Production Reliability
+### Priority 1: Production Reliability (patterns to consider)
 | Pattern | Source | Effort | Impact |
 |---------|--------|--------|--------|
 | Exponential backoff in RetryPolicy | Hatchet, Temporal | S | High |

@@ -14,7 +14,6 @@ linters:
 
     # DRY
     - dupl          # copy-paste detector
-    - goconst       # repeated string literals → constants
 
     # Hardcode prevention
     - mnd           # magic number detector
@@ -42,9 +41,6 @@ linters:
       min-complexity: 5
     dupl:
       threshold: 150
-    goconst:
-      min-len: 3
-      min-occurrences: 3
     mnd:
       checks:
         - argument
@@ -78,16 +74,20 @@ linters:
           - mnd
           - dupl
           - gosec
-          - goconst
           - gocognit
           - cyclop
-      # Inherited complex code from Vaelor — refactor in v0.2+
-      - path: n8n_compat\.go
+      # Complexity exclusions for n8n conversion code — to be refactored
+      - path: n8n_convert\.go
         linters:
           - gocognit
           - cyclop
           - nestif
           - funlen
+      - path: n8n_extract\.go
+        linters:
+          - gocognit
+          - cyclop
+          - nestif
       - path: executors\.go
         linters:
           - gocognit

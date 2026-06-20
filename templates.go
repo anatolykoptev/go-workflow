@@ -186,7 +186,7 @@ type paramSpecWire struct {
 // MarshalJSON implements json.Marshaler. It preserves the legacy wire shape
 // for trivially-legacy entries (Type=string, no default/required/enum) by
 // emitting a bare string (the Description). This keeps backward-compat for
-// consumers (go-wp, vaelor, krolik-agent) that read params as map[string]string.
+// consumers that read params as map[string]string.
 //
 // Non-trivial entries (typed, required, enumerated, or with a default) are
 // marshaled as the full {"type":"...","description":"...",...} object form.

@@ -1,12 +1,11 @@
 # go-workflow Roadmap
 
-## v0.1.0 — Extraction (done)
-- [x] Extract from Vaelor pkg/workflow
-- [x] Replace Vaelor deps with local interfaces (MessagePublisher, LLMProvider)
+## v0.1.0 — Core Engine (done)
+- [x] Standalone DAG workflow engine with 15 step types
+- [x] Local interfaces (MessagePublisher, LLMProvider) — no external service deps
 - [x] Functional options for Engine construction
 - [x] slog for logging (injected)
-- [x] All 77 tests passing, 0 lint issues
-- [x] Vaelor migrated to go-workflow
+- [x] All tests passing, 0 lint issues
 
 ## v0.2.0 — Production Retry & Timeout
 
@@ -32,10 +31,10 @@ Inspired by: go-workflows (multi-backend), DBOS (Postgres transactional checkpoi
 
 Inspired by: Hatchet (TriggeredByCron/ByEvent), Inngest (waitForEvent with match expression).
 
-- [x] Extract cron/scheduler from Vaelor pkg/cron
+- [x] Cron/scheduler engine with cron expressions and interval triggers
 - [x] Time-based triggers: `at` (one-shot), `every` (interval), `cron` (expression)
 - [x] Event-based triggers: hook event → auto-start workflow
-- [x] `WaitForEvent` step type: suspend until matching event arrives (with timeout)
+- [ ] `WaitForEvent` step type: suspend until matching event arrives (with timeout) — planned, not yet implemented
 - [x] Trigger→workflow auto-start with parameter injection
 
 ## v0.5.0 — Observability
@@ -67,7 +66,7 @@ Inspired by: LangGraph (state reducers, interrupt), Conductor (LLM task types), 
 - [x] LLM streaming: token-by-token callback from LLMProvider to caller
 - [x] LLM tool calling in workflow: LLM step can invoke tools, multi-turn within single step
 - [x] `interrupt_before/after`: declarative HITL — pause before/after named steps without code change
-- [x] MCP tool runner: call tools on remote MCP servers (go-wp, go-search, go-code, etc.) via ToolRunner interface
+- [x] MCP tool runner: call tools on remote MCP servers (wordpress-api, search-service, code-indexer, etc.) via ToolRunner interface
 - [x] Multi-runner routing: combine local and MCP tool runners with name-based dispatch
 
 ## v0.8.0 — Distributed Execution (done)
