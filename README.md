@@ -2,7 +2,7 @@
 
 Standalone DAG workflow engine for Go. 15 step types, MCP server integration, pluggable persistence (file/SQLite/PostgreSQL), distributed execution, templates, approval flows, crash recovery.
 
-**v0.13.1** | Go 1.26 | [Apache-2.0 License](LICENSE)
+Go 1.26 · [Apache-2.0](LICENSE) · [Releases](https://github.com/anatolykoptev/go-workflow/releases)
 
 ## Installation
 
@@ -13,7 +13,7 @@ go get github.com/anatolykoptev/go-workflow
 ## Features
 
 - **DAG execution** — steps run in parallel when dependencies allow
-- **15 step types** — adds `vision` for multimodal LLM calls with image inputs (companion to the new `image` step), via optional `VisionCapable` provider interface. Full list: tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop, image, vision
+- **15 step types** — tool, llm, agent, a2a, message, condition, transform, approval, workflow, foreach, branchall, suspend, noop, image, and vision (multimodal LLM with image inputs via the optional `VisionCapable` interface)
 - **MCP integration** — `WithMCPServers()` connects to any MCP server, auto-discovers tools
 - **Templates** — parameterized workflow definitions with `{{variable}}` (string) and `"@@int:NAME"` / `"@@bool:NAME"` / `"@@float:NAME"` (typed) substitution, loaded from JSON files
 - **Approval flow** — pause workflow, await human/AI approval, resume or reject
