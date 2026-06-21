@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.16.1](https://github.com/anatolykoptev/go-workflow/compare/v0.16.0...v0.16.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* **breaker:** wrap LLM tool-loop calls in the shared circuit breaker ([#14](https://github.com/anatolykoptev/go-workflow/issues/14)) ([e2623db](https://github.com/anatolykoptev/go-workflow/commit/e2623dbb150e1835dd8ad103d636e8b8809c1d1d))
+
 ## [0.16.0](https://github.com/anatolykoptev/go-workflow/compare/v0.15.0...v0.16.0) (2026-06-21)
 
 
