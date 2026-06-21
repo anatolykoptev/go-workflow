@@ -19,7 +19,9 @@ go get github.com/anatolykoptev/go-workflow
 - **Approval flow** — pause workflow, await human/AI approval, resume or reject
 - **Pluggable persistence** — JSON files (default), SQLite, or PostgreSQL
 - **Distributed execution** — dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue
-- **Production retry** — exponential backoff, per-step timeout, conditional retry/skip, dead letter
+- **Production retry** — exponential backoff with ±25% jitter, `Retry-After` honoring, per-step timeout, conditional retry/skip, dead letter
+- **Circuit breaking** — per-endpoint circuit breaker on outbound tool / agent / MCP / A2A / vision calls; fails fast when an endpoint is down, recovers on a half-open probe
+- **Rate limiting** — opt-in per-provider QPS token-bucket on outbound calls via `WithRateLimit(provider, rate, burst)`
 - **Crash recovery** — `RecoverAll()` resumes workflows interrupted by process crash
 - **Idempotency** — `IdempotencyKey` prevents duplicate workflow runs
 - **Security policies** — step budgets, duration limits, tool allow/deny lists, secret masking
