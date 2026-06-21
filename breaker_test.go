@@ -122,3 +122,19 @@ func TestBreaker_WithBreaker_PassesOnSuccess(t *testing.T) {
 		t.Errorf("breaker = %s, want closed after 10 successes", b.State())
 	}
 }
+
+// TestCircuitOpenError_IsTransient verifies that a circuit-open error is
+// recognised as transient by IsTransientError, so the auto-retry watchdog
+// (AutoRetryFailed) picks up workflows that failed due to an open circuit.
+//
+// Red-on-revert: if "circuit open" is removed from transientPatterns, this
+// test fails. Without it, AutoRetryFailed classifies circuit-open failures
+// as permanent and never re-queues them, defeating circuit recovery.
+func TestCircuitOpenError_IsTransient(t *testing.T) {
+	t.Parallel()
+
+	err := &circuitOpenError{endpoint: "llm:claude-3-5-sonnet"}
+	if !IsTransientError(err.Error()) {
+		t.Errorf("IsTransientError(%q) = false, want true; circuit-open errors must be transient so AutoRetryFailed re-queues them", err.Error())
+	}
+}

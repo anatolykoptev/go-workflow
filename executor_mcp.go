@@ -58,15 +58,15 @@ func (r *MCPToolRunner) Execute(ctx context.Context, name string, args map[strin
 
 	var text string
 	err = r.breakers.call("mcp:"+serverID, func() error {
-		r, callErr := session.CallTool(ctx, &mcp.CallToolParams{
+		res, callErr := session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      name,
 			Arguments: args,
 		})
 		if callErr != nil {
 			return fmt.Errorf("mcp call %s.%s: %w", serverID, name, callErr)
 		}
-		text = extractText(r)
-		if r.IsError {
+		text = extractText(res)
+		if res.IsError {
 			return fmt.Errorf("mcp tool %s error: %s", name, text)
 		}
 		return nil
