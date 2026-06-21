@@ -21,8 +21,9 @@ type AgentRunner interface {
 
 // AgentExecutor delegates a task to the full agent loop (with tools, memory, skills).
 type AgentExecutor struct {
-	runner  AgentRunner
-	metrics *Metrics
+	runner   AgentRunner
+	metrics  *Metrics
+	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
 func NewAgentExecutor(runner AgentRunner, metrics *Metrics) *AgentExecutor {
@@ -70,7 +71,12 @@ func (e *AgentExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) e
 		SkipContext:    skipCtx,
 	}
 
-	result, err := e.runner.RunTask(ctx, task, sessionKey, opts)
+	var result string
+	err := e.breakers.call("agent:"+step.ID, func() error {
+		var callErr error
+		result, callErr = e.runner.RunTask(ctx, task, sessionKey, opts)
+		return callErr
+	})
 	if err != nil {
 		e.metrics.AgentStepsFailed.Add(1)
 		return fmt.Errorf("agent: %w", err)

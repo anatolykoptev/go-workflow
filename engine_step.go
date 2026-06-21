@@ -83,7 +83,20 @@ func (e *Engine) RunStep(ctx context.Context, workflowID, stepID string) error {
 	// downstream so child operations (HTTP, MCP) join the same trace.
 	spanCtx, span := e.startStepSpan(ctx, w, step)
 	execStart := time.Now()
-	execErr := executor.Execute(spanCtx, step, w)
+	// QPS rate limit (opt-in): check before calling the executor.
+	// When throttled, treat the limit error as execErr so it flows through
+	// handleStepError and the retry machinery — a throttle is transient.
+	var execErr error
+	if e.rateLimits != nil {
+		provider := stepProviderKey(step)
+		if limitErr := e.rateLimits.check(provider); limitErr != nil {
+			execErr = limitErr
+		} else {
+			execErr = executor.Execute(spanCtx, step, w)
+		}
+	} else {
+		execErr = executor.Execute(spanCtx, step, w)
+	}
 	endedAt := time.Now().UnixMilli()
 	durationMS := time.Since(execStart).Milliseconds()
 	finishStepSpan(span, step, durationMS, false, execErr)

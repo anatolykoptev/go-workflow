@@ -13,7 +13,8 @@ type ToolRunner interface {
 
 // ToolExecutor calls a registered tool and stores the result in workflow context.
 type ToolExecutor struct {
-	runner ToolRunner
+	runner   ToolRunner
+	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
 func NewToolExecutor(runner ToolRunner) *ToolExecutor {
@@ -39,7 +40,12 @@ func (e *ToolExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) er
 		}
 	}
 
-	result, err := e.runner.Execute(ctx, toolName, args)
+	var result string
+	err := e.breakers.call("tool:"+toolName, func() error {
+		var callErr error
+		result, callErr = e.runner.Execute(ctx, toolName, args)
+		return callErr
+	})
 	if err != nil {
 		return fmt.Errorf("tool %s: %w", toolName, err)
 	}

@@ -62,6 +62,8 @@ type Engine struct {
 	eventLog           *EventLog
 	costModel          map[string]ModelPrice
 	budgetUSD          float64 // 0 = no budget
+	rateLimits         *rateLimitRegistry
+	breakers           *breakerRegistry
 	tracerProvider     trace.TracerProvider
 	tracer             trace.Tracer
 	stepCache          StepCache
@@ -81,6 +83,7 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 		metrics:   GlobalMetrics,
 		logger:    slog.Default(),
 		costModel: DefaultCostModel,
+		breakers:  &breakerRegistry{},
 		executors: map[StepKind]StepExecutor{
 			StepCondition: NewConditionExecutor(),
 			StepApproval:  NewApprovalExecutor(),
@@ -114,6 +117,10 @@ func NewEngine(store *WorkflowStore, opts ...EngineOption) *Engine {
 	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
 		ex.engine = e
 	}
+
+	// Wire engine-scoped breaker registry into all outbound executors.
+	// Extracted to wireBreakers to keep NewEngine under the cyclop complexity limit.
+	wireBreakers(e)
 
 	// Wire ToolRunner into LLMExecutor for tool calling
 	if llmEx, ok := e.executors[StepLLM].(*LLMExecutor); ok {
@@ -186,4 +193,29 @@ func (e *Engine) recordStepCost(wf *Workflow, c StepCost) error {
 		return fmt.Errorf("%w: at step %s, spent $%.4f, limit $%.4f", ErrBudgetExceeded, c.StepID, wf.Cost.USDEstimate, e.budgetUSD)
 	}
 	return nil
+}
+
+// wireBreakers sets the engine-scoped breakerRegistry on all outbound executors.
+// Called from NewEngine after options are applied. Keeping this in a helper
+// prevents NewEngine's cyclomatic complexity from exceeding the cyclop limit.
+func wireBreakers(e *Engine) {
+	if ex, ok := e.executors[StepTool].(*ToolExecutor); ok {
+		ex.breakers = e.breakers
+		setMCPBreakers(ex.runner, e.breakers)
+	}
+	if ex, ok := e.executors[StepAgent].(*AgentExecutor); ok {
+		ex.breakers = e.breakers
+	}
+	if ex, ok := e.executors[StepA2A].(*A2AExecutor); ok {
+		ex.breakers = e.breakers
+	}
+	if ex, ok := e.executors[StepVision].(*VisionExecutor); ok {
+		ex.breakers = e.breakers
+	}
+	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
+		ex.breakers = e.breakers
+	}
+	if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
+		ex.breakers = e.breakers
+	}
 }

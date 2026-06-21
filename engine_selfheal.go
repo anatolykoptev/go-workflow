@@ -10,6 +10,7 @@ import (
 var transientPatterns = []string{
 	"capacity exhausted",
 	"rate limit",
+	"circuit open", // circuit breaker open — back off until half-open
 	"429",
 	"503",
 	"timeout",

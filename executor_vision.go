@@ -37,7 +37,8 @@ const (
 type VisionExecutor struct {
 	provider LLMProvider
 	metrics  *Metrics
-	engine   *Engine // back-reference for cost recording (set by NewEngine)
+	engine   *Engine         // back-reference for cost recording (set by NewEngine)
+	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
 // NewVisionExecutor builds a VisionExecutor wired to the given provider + metrics.
@@ -87,8 +88,12 @@ func (e *VisionExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) 
 	}
 
 	start := time.Now()
-	resp, err := e.provider.Chat(ctx, []LLMMessage{msg}, model)
-	if err != nil {
+	var resp *LLMResponse
+	if err := e.breakers.call("vision:"+model, func() error {
+		var callErr error
+		resp, callErr = e.provider.Chat(ctx, []LLMMessage{msg}, model)
+		return callErr
+	}); err != nil {
 		e.recordFailure()
 		return fmt.Errorf("vision step %s: chat: %w", step.ID, err)
 	}
@@ -274,8 +279,12 @@ func (e *VisionExecutor) parseAndMaybeRetry(
 	retryPrompt := prompt + "\n\nYour previous response was not valid JSON conforming to the schema:\n" +
 		schema + "\nOutput ONLY valid JSON with no surrounding prose."
 	retryMsg := LLMMessage{Role: "user", Content: retryPrompt, Images: original.Images}
-	resp, err := e.provider.Chat(ctx, []LLMMessage{retryMsg}, model)
-	if err != nil {
+	var resp *LLMResponse
+	if err := e.breakers.call("vision:"+model, func() error {
+		var callErr error
+		resp, callErr = e.provider.Chat(ctx, []LLMMessage{retryMsg}, model)
+		return callErr
+	}); err != nil {
 		return nil, nil, fmt.Errorf("retry chat: %w", err)
 	}
 	var parsed2 any

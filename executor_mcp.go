@@ -22,6 +22,7 @@ type MCPToolRunner struct {
 	sessions map[string]*mcp.ClientSession // lazy-initialized
 	routes   map[string]string             // toolName → serverID
 	mu       sync.RWMutex
+	breakers *breakerRegistry              // nil = disabled (e.g. in unit tests)
 }
 
 // NewMCPToolRunner creates a runner for the given MCP servers.
@@ -55,20 +56,24 @@ func (r *MCPToolRunner) Execute(ctx context.Context, name string, args map[strin
 		return "", fmt.Errorf("mcp connect %s: %w", serverID, err)
 	}
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      name,
-		Arguments: args,
+	var text string
+	err = r.breakers.call("mcp:"+serverID, func() error {
+		res, callErr := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      name,
+			Arguments: args,
+		})
+		if callErr != nil {
+			return fmt.Errorf("mcp call %s.%s: %w", serverID, name, callErr)
+		}
+		text = extractText(res)
+		if res.IsError {
+			return fmt.Errorf("mcp tool %s error: %s", name, text)
+		}
+		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("mcp call %s.%s: %w", serverID, name, err)
+		return "", err
 	}
-
-	text := extractText(result)
-
-	if result.IsError {
-		return "", fmt.Errorf("mcp tool %s error: %s", name, text)
-	}
-
 	return text, nil
 }
 
