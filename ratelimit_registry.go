@@ -81,7 +81,8 @@ func stepProviderKey(step *Step) string {
 			return model
 		}
 	case StepAgent:
-		// AgentExecutor keys the breaker as "agent:"+step.ID; match that here.
+		// Agent steps are keyed by step.ID (matches the WithRateLimit provider key
+		// for agent steps; the breaker namespace is separate and uses "agent:"+step.ID).
 		return step.ID
 	case StepA2A:
 		if id, ok := step.Config["agent_id"].(string); ok && id != "" {

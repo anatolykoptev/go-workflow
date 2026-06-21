@@ -74,6 +74,7 @@ const (
 // downstream via wf.Context[stepID].
 type ImageExecutor struct {
 	renderer ImageRenderer
+	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 	metrics  *Metrics
 	engine   *Engine // back-reference for cost recording (set by NewEngine)
 	// workspaceDir, when set, makes the executor persist rendered bytes to a file
@@ -102,8 +103,12 @@ func (e *ImageExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) e
 	}
 
 	start := time.Now()
-	res, err := e.renderer.Render(ctx, req)
-	if err != nil {
+	var res ImageRenderResult
+	if err := e.breakers.call("image:"+step.ID, func() error {
+		var callErr error
+		res, callErr = e.renderer.Render(ctx, req)
+		return callErr
+	}); err != nil {
 		e.recordFailure()
 		return fmt.Errorf("image step %s: render: %w", step.ID, err)
 	}

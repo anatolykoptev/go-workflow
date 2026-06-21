@@ -154,29 +154,38 @@ func (e *LLMExecutor) executeClient(ctx context.Context, step *Step, wf *Workflo
 
 // executeStream handles the streaming path via go-kit client.
 func (e *LLMExecutor) executeStream(ctx context.Context, step *Step, wf *Workflow, msgs []llm.Message) error {
-	stream, err := e.client.Stream(ctx, msgs)
-	if err != nil {
-		return fmt.Errorf("llm stream: %w", err)
-	}
-	defer stream.Close()
-
+	streamModel, _ := step.Config["model"].(string)
 	var buf strings.Builder
-	for {
-		chunk, ok := stream.Next()
-		if !ok {
-			break
+	var streamUsage *llm.Usage
+	streamErr := e.breakers.call("llm:"+streamModel, func() error {
+		stream, err := e.client.Stream(ctx, msgs)
+		if err != nil {
+			return fmt.Errorf("llm stream: %w", err)
 		}
-		buf.WriteString(chunk.Delta)
-		e.streamCB(wf.ID, step.ID, chunk.Delta)
-	}
-	if err := stream.Err(); err != nil {
-		return fmt.Errorf("llm stream: %w", err)
+		defer stream.Close()
+
+		for {
+			chunk, ok := stream.Next()
+			if !ok {
+				break
+			}
+			buf.WriteString(chunk.Delta)
+			e.streamCB(wf.ID, step.ID, chunk.Delta)
+		}
+		if err := stream.Err(); err != nil {
+			return fmt.Errorf("llm stream: %w", err)
+		}
+		streamUsage = stream.Usage()
+		return nil
+	})
+	if streamErr != nil {
+		return streamErr
 	}
 
 	content := buf.String()
 	step.Result = content
 	wf.Context[step.ID] = content
-	if u := stream.Usage(); u != nil {
+	if u := streamUsage; u != nil {
 		recordUsage(step.ID, wf, e.metrics, u.PromptTokens, u.CompletionTokens, "")
 		if e.engine != nil {
 			model, _ := step.Config["model"].(string)

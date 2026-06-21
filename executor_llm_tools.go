@@ -16,13 +16,18 @@ func (e *LLMExecutor) executeToolLoop(
 	ctx context.Context, step *Step, wf *Workflow,
 	messages []llm.Message, tools []llm.Tool, maxTurns int,
 ) error {
+	model, _ := step.Config["model"].(string)
 	var totalUsage llm.Usage
 	var toolLog []map[string]any
 
 	for turn := range maxTurns {
-		resp, err := e.client.Chat(ctx, messages, llm.WithTools(tools))
-		if err != nil {
-			return fmt.Errorf("llm turn %d: %w", turn+1, err)
+		var resp *llm.ChatResponse
+		if breakErr := e.breakers.call("llm:"+model, func() error {
+			var callErr error
+			resp, callErr = e.client.Chat(ctx, messages, llm.WithTools(tools))
+			return callErr
+		}); breakErr != nil {
+			return fmt.Errorf("llm turn %d: %w", turn+1, breakErr)
 		}
 		accumulateUsage(&totalUsage, resp.Usage)
 

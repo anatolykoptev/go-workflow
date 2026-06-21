@@ -215,4 +215,7 @@ func wireBreakers(e *Engine) {
 	if ex, ok := e.executors[StepLLM].(*LLMExecutor); ok {
 		ex.breakers = e.breakers
 	}
+	if ex, ok := e.executors[StepImage].(*ImageExecutor); ok {
+		ex.breakers = e.breakers
+	}
 }
