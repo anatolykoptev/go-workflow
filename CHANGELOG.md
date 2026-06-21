@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.16.0](https://github.com/anatolykoptev/go-workflow/compare/v0.15.0...v0.16.0) (2026-06-21)
+
+
+### Features
+
+* adopt go-kit resilience primitives (circuit breaker, retry jitter + Retry-After, QPS rate limit) ([8cd2d17](https://github.com/anatolykoptev/go-workflow/commit/8cd2d17128e418163aa4ac66935a8a654120c985))
+
+
+### Bug Fixes
+
+* **testdb:** add test-DB isolation guard ([#11](https://github.com/anatolykoptev/go-workflow/issues/11)) ([c49834c](https://github.com/anatolykoptev/go-workflow/commit/c49834c46390d907faee077e2fadc0f6adb0b22c))
+
+
+### Documentation
+
+* document circuit breaker, retry jitter/Retry-After, and rate limiting in features ([7a7ab89](https://github.com/anatolykoptev/go-workflow/commit/7a7ab8938fe3528cbbd20eb0c029c1a2fa9deacc))
+* drop stale hardcoded version from README header; clean up step-types line ([2366086](https://github.com/anatolykoptev/go-workflow/commit/2366086ba8955ad3dd931f862b8fc4abf421a81e))
+* use canonical Apache-2.0 license text so GitHub detects the license ([6183628](https://github.com/anatolykoptev/go-workflow/commit/6183628a77b902464142a3b5e7c1a368243e316e))
+
 ## v0.13.1 — typed markers wired into instantiateStep
 
 ### Fixed
