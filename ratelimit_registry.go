@@ -81,9 +81,7 @@ func stepProviderKey(step *Step) string {
 			return model
 		}
 	case StepAgent:
-		if id, ok := step.Config["agent_id"].(string); ok && id != "" {
-			return id
-		}
+		// AgentExecutor keys the breaker as "agent:"+step.ID; match that here.
 		return step.ID
 	case StepA2A:
 		if id, ok := step.Config["agent_id"].(string); ok && id != "" {

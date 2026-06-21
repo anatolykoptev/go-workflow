@@ -29,6 +29,7 @@ type LLMExecutor struct {
 	streamCB   StreamCallback
 	toolRunner ToolRunner
 	engine     *Engine // back-reference for cost recording (set by NewEngine)
+	breakers   *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
 // NewLLMExecutor creates an LLMExecutor using the legacy LLMProvider interface.
@@ -72,8 +73,12 @@ func (e *LLMExecutor) executeProvider(ctx context.Context, step *Step, wf *Workf
 	messages := []LLMMessage{{Role: "user", Content: prompt}}
 
 	start := time.Now()
-	resp, err := e.provider.Chat(ctx, messages, model)
-	if err != nil {
+	var resp *LLMResponse
+	if err := e.breakers.call("llm:"+model, func() error {
+		var callErr error
+		resp, callErr = e.provider.Chat(ctx, messages, model)
+		return callErr
+	}); err != nil {
 		return fmt.Errorf("llm: %w", err)
 	}
 
@@ -116,8 +121,13 @@ func (e *LLMExecutor) executeClient(ctx context.Context, step *Step, wf *Workflo
 	}
 
 	start := time.Now()
-	resp, err := e.client.Chat(ctx, msgs)
-	if err != nil {
+	clientModel, _ := step.Config["model"].(string)
+	var resp *llm.ChatResponse
+	if err := e.breakers.call("llm:"+clientModel, func() error {
+		var callErr error
+		resp, callErr = e.client.Chat(ctx, msgs)
+		return callErr
+	}); err != nil {
 		return fmt.Errorf("llm: %w", err)
 	}
 
