@@ -86,6 +86,9 @@ func (e *LLMExecutor) executeToolLoop(
 }
 
 // executeTool checks security policy, parses arguments, and delegates to the tool runner.
+// The outbound call is wrapped in the shared circuit breaker (keyed "tool:<name>") so
+// a dead tool endpoint hit through the LLM tool-loop fails fast instead of being
+// hammered on every turn.
 func (e *LLMExecutor) executeTool(ctx context.Context, tc llm.ToolCall, wf *Workflow) (string, error) {
 	// Enforce security policy for LLM-driven tool calls
 	if wf.Security != nil && !wf.Security.IsToolAllowed(tc.Function.Name) {
@@ -98,7 +101,16 @@ func (e *LLMExecutor) executeTool(ctx context.Context, tc llm.ToolCall, wf *Work
 			args = map[string]any{"raw": tc.Function.Arguments}
 		}
 	}
-	return e.toolRunner.Execute(ctx, tc.Function.Name, args)
+
+	var result string
+	if err := e.breakers.call("tool:"+tc.Function.Name, func() error {
+		var callErr error
+		result, callErr = e.toolRunner.Execute(ctx, tc.Function.Name, args)
+		return callErr
+	}); err != nil {
+		return "", err
+	}
+	return result, nil
 }
 
 // parseTools extracts tool definitions from step config.
