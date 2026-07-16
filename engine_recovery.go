@@ -207,6 +207,50 @@ func (e *Engine) rejectApproval(workflowID string, w *Workflow) error {
 	return err
 }
 
+// Reopen transitions a cancelled workflow back to waiting_approval, provided
+// it is safely resumable — i.e. there is exactly one pending approval step
+// (the gate it was waiting on when cancelled; Cancel only touches workflow-level
+// State/Error, so that step is still StepPending). This is the inverse of Cancel
+// for the "stop parking this, needs a human decision" cleanup pattern: once the
+// human resolves the blocking issue, the caller can Reopen and then proceed with
+// a normal HandleApproval/HandleApprovalWithData on the SAME workflow.
+//
+// It does NOT touch step states — the pending approval step is already correctly
+// StepPending, ready for HandleApproval right after. If there is no pending
+// approval step (cancelled before reaching any approval gate, or a workflow with
+// no approval steps at all) there is nothing to reopen INTO and an error is returned.
+func (e *Engine) Reopen(workflowID string) error {
+	w, err := e.loadWorkflow(workflowID)
+	if err != nil {
+		return err
+	}
+
+	if w.State != StateCancelled {
+		return fmt.Errorf("workflow %s is %s, not cancelled", workflowID, w.State)
+	}
+
+	// Reuse the exact same scan pattern registerWFStatus (mcp_tools.go) uses to
+	// compute pending_approval: s.Kind == StepApproval && s.State == StepPending.
+	// There must be EXACTLY ONE such step — the gate it was waiting on when
+	// cancelled. Zero means nothing to reopen into; >1 is an inconsistent state
+	// we refuse to silently paper over.
+	pendingCount := 0
+	for _, s := range w.Steps {
+		if s.Kind == StepApproval && s.State == StepPending {
+			pendingCount++
+		}
+	}
+	if pendingCount != 1 {
+		return fmt.Errorf("workflow %s has %d pending approval steps, need exactly 1 to reopen", workflowID, pendingCount)
+	}
+
+	return e.store.Modify(workflowID, func(w *Workflow) {
+		w.State = StateWaitingApproval
+		w.Error = ""
+		w.UpdatedAt = time.Now().UnixMilli()
+	})
+}
+
 // Cancel cancels a running or paused workflow.
 func (e *Engine) Cancel(workflowID string) error {
 	w, err := e.loadWorkflow(workflowID)
