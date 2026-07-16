@@ -235,20 +235,35 @@ func (e *Engine) Reopen(workflowID string) error {
 	// cancelled. Zero means nothing to reopen into; >1 is an inconsistent state
 	// we refuse to silently paper over.
 	pendingCount := 0
+	var pendingStepID string
 	for _, s := range w.Steps {
 		if s.Kind == StepApproval && s.State == StepPending {
 			pendingCount++
+			pendingStepID = s.ID
 		}
 	}
 	if pendingCount != 1 {
 		return fmt.Errorf("workflow %s has %d pending approval steps, need exactly 1 to reopen", workflowID, pendingCount)
 	}
 
-	return e.store.Modify(workflowID, func(w *Workflow) {
+	if err := e.store.Modify(workflowID, func(w *Workflow) {
 		w.State = StateWaitingApproval
 		w.Error = ""
 		w.UpdatedAt = time.Now().UnixMilli()
+	}); err != nil {
+		return err
+	}
+
+	// Every other entry into WaitingApproval fires this event (interrupt_after,
+	// interrupt_before, handleApprovalRequired) — a subscriber (approval-
+	// notification/UI driver) needs to learn a reopened workflow is waiting
+	// again, same as it would for a fresh approval gate.
+	e.fireHook(EventWorkflowApprovalNeeded, map[string]any{
+		"workflow_id": workflowID,
+		"step_id":     pendingStepID,
+		"reason":      "reopened",
 	})
+	return nil
 }
 
 // Cancel cancels a running or paused workflow.

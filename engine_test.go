@@ -830,6 +830,106 @@ func TestReopen_NoPendingApproval(t *testing.T) {
 	if err == nil {
 		t.Fatal("Reopen on a cancelled workflow with no pending approval step should fail, got nil")
 	}
+	if !strings.Contains(err.Error(), "0 pending approval steps") {
+		t.Errorf("Reopen error = %q, want it to name the count-guard reason (0 pending approval steps)", err.Error())
+	}
+}
+
+// TestReopen_MultiplePendingApprovals_Refuses guards the >1 branch of the
+// pending-approval-count check: a workflow with two concurrent dep-free
+// approval steps both StepPending (reachable via runParallel dispatch of
+// two approval gates with no depends_on between them) must refuse to
+// reopen rather than silently picking one — an inconsistent state we don't
+// paper over.
+func TestReopen_MultiplePendingApprovals_Refuses(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-multi-approve", "MultiApprove", "telegram:1", []Step{
+		{ID: "approve-a", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+		{ID: "approve-b", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	_ = store.Save(wf)
+
+	err := engine.Reopen("wf-multi-approve")
+	if err == nil {
+		t.Fatal("Reopen with 2 pending approval steps should fail, got nil")
+	}
+	if !strings.Contains(err.Error(), "2 pending approval steps") {
+		t.Errorf("Reopen error = %q, want it to name the count-guard reason (2 pending approval steps)", err.Error())
+	}
+}
+
+// TestReopen_FiresApprovalNeededHook guards the event-emission parity fixed
+// alongside issue #16: every OTHER entry into WaitingApproval fires
+// EventWorkflowApprovalNeeded (interrupt_after, interrupt_before,
+// handleApprovalRequired) so a hook subscriber (approval-notification/UI
+// driver) learns a decision is needed. Reopen must fire it too — a
+// reopened workflow re-entering WaitingApproval is exactly such a case,
+// and a subscriber that only ever hears the first cancel would otherwise
+// never learn the workflow needs attention again.
+func TestReopen_FiresApprovalNeededHook(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	rec := &reopenHookRecorder{}
+	engine.SetHooks(rec)
+
+	wf := NewWorkflow("wf-reopen-hook", "ReopenHook", "telegram:1", []Step{
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	_ = store.Save(wf)
+
+	if err := engine.Reopen("wf-reopen-hook"); err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+
+	fired := rec.find(EventWorkflowApprovalNeeded)
+	if fired == nil {
+		t.Fatal("Reopen did not fire EventWorkflowApprovalNeeded")
+	}
+	if fired["workflow_id"] != "wf-reopen-hook" {
+		t.Errorf("hook data workflow_id = %v, want wf-reopen-hook", fired["workflow_id"])
+	}
+	if fired["step_id"] != "approve" {
+		t.Errorf("hook data step_id = %v, want approve", fired["step_id"])
+	}
+	if fired["reason"] != "reopened" {
+		t.Errorf("hook data reason = %v, want reopened", fired["reason"])
+	}
+}
+
+// reopenHookRecorder is a minimal HookPublisher test double recording every
+// Fire call's event name AND data payload for assertion (distinct from
+// hooks_test.go's hookRecorder, which only records event names).
+type reopenHookRecorder struct {
+	calls []struct {
+		event string
+		data  map[string]any
+	}
+}
+
+func (r *reopenHookRecorder) Fire(event string, data map[string]any) int {
+	r.calls = append(r.calls, struct {
+		event string
+		data  map[string]any
+	}{event, data})
+	return 1
+}
+
+func (r *reopenHookRecorder) find(event string) map[string]any {
+	for _, c := range r.calls {
+		if c.event == event {
+			return c.data
+		}
+	}
+	return nil
 }
 
 // suppress unused import warnings
