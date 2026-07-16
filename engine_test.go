@@ -810,14 +810,17 @@ func TestReopen_NotCancelled(t *testing.T) {
 }
 
 // TestReopen_NoPendingApproval guards against reopening a cancelled workflow
-// that has no pending approval step to reopen INTO — must error.
+// that has no current step to reopen INTO — must error. A workflow with no
+// approval steps at all, cancelled before reaching any approval gate, has an
+// empty CurrentStep (the engine never advanced to one), so there is nothing
+// to reopen into.
 func TestReopen_NoPendingApproval(t *testing.T) {
 	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
 	// A workflow with no approval steps at all — cancelled before reaching any
-	// approval gate. There is nothing to reopen into.
+	// approval gate. CurrentStep is empty, so there is nothing to reopen into.
 	wf := NewWorkflow("wf-noapprove", "NoApprove", "telegram:1", []Step{
 		{ID: "a", Kind: StepTool, Config: map[string]any{"tool": "ta"}, State: StepPending},
 		{ID: "b", Kind: StepTool, Config: map[string]any{"tool": "tb"}, DependsOn: []string{"a"}, State: StepPending},
@@ -828,38 +831,110 @@ func TestReopen_NoPendingApproval(t *testing.T) {
 
 	err := engine.Reopen("wf-noapprove")
 	if err == nil {
-		t.Fatal("Reopen on a cancelled workflow with no pending approval step should fail, got nil")
+		t.Fatal("Reopen on a cancelled workflow with no current step should fail, got nil")
 	}
-	if !strings.Contains(err.Error(), "0 pending approval steps") {
-		t.Errorf("Reopen error = %q, want it to name the count-guard reason (0 pending approval steps)", err.Error())
+	if !strings.Contains(err.Error(), "no current step") {
+		t.Errorf("Reopen error = %q, want it to mention 'no current step'", err.Error())
 	}
 }
 
-// TestReopen_MultiplePendingApprovals_Refuses guards the >1 branch of the
-// pending-approval-count check: a workflow with two concurrent dep-free
-// approval steps both StepPending (reachable via runParallel dispatch of
-// two approval gates with no depends_on between them) must refuse to
-// reopen rather than silently picking one — an inconsistent state we don't
-// paper over.
-func TestReopen_MultiplePendingApprovals_Refuses(t *testing.T) {
+// TestReopen_CurrentStepNotPendingApproval guards the case where CurrentStep
+// points at a step that is not a pending approval gate (e.g. a tool step, or
+// an approval step already completed) — there is nothing to reopen INTO and
+// Reopen must fail closed rather than silently picking some other pending
+// approval step.
+func TestReopen_CurrentStepNotPendingApproval(t *testing.T) {
 	t.Parallel()
 	runner := &mockToolRunner{}
 	engine, store := newTestEngine(t, runner)
 
-	wf := NewWorkflow("wf-multi-approve", "MultiApprove", "telegram:1", []Step{
-		{ID: "approve-a", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
-		{ID: "approve-b", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	// CurrentStep points at a tool step — not an approval gate.
+	wf := NewWorkflow("wf-currenttool", "CurrentTool", "telegram:1", []Step{
+		{ID: "research", Kind: StepTool, Config: map[string]any{"tool": "research"}, State: StepPending},
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, DependsOn: []string{"research"}, State: StepPending},
 	})
+	wf.CurrentStep = "research"
 	wf.State = StateCancelled
 	wf.Error = "cancelled by user"
 	_ = store.Save(wf)
 
-	err := engine.Reopen("wf-multi-approve")
+	err := engine.Reopen("wf-currenttool")
 	if err == nil {
-		t.Fatal("Reopen with 2 pending approval steps should fail, got nil")
+		t.Fatal("Reopen with CurrentStep pointing at a non-approval step should fail, got nil")
 	}
-	if !strings.Contains(err.Error(), "2 pending approval steps") {
-		t.Errorf("Reopen error = %q, want it to name the count-guard reason (2 pending approval steps)", err.Error())
+	if !strings.Contains(err.Error(), "not a pending approval step") {
+		t.Errorf("Reopen error = %q, want it to mention 'not a pending approval step'", err.Error())
+	}
+}
+
+// TestReopen_CurrentStepTargetsCorrectGate is the primary regression test for
+// issue #19: a workflow cancelled EARLY in its pipeline (several approval
+// steps still ahead, all defaulted to StepPending from creation) must reopen
+// into the step named by CurrentStep — not refuse, and not perturb the other
+// not-yet-reached placeholder pendings. Mirrors the real create-collection
+// repro shape: select-places/enrich completed, compose-content is the actual
+// current gate, validate/create-draft/go-live are not-yet-reached pendings.
+func TestReopen_CurrentStepTargetsCorrectGate(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-create-collection-19", "create-collection", "telegram:1", []Step{
+		{ID: "research", Kind: StepTool, Config: map[string]any{"tool": "research"}, State: StepCompleted},
+		{ID: "select-places", Kind: StepApproval, Config: map[string]any{}, State: StepCompleted},
+		{ID: "enrich", Kind: StepApproval, Config: map[string]any{}, State: StepCompleted},
+		{ID: "compose-content", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+		{ID: "validate", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+		{ID: "create-draft", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+		{ID: "go-live", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+		{ID: "publish", Kind: StepTool, Config: map[string]any{"tool": "publish"}, State: StepPending},
+		{ID: "flush", Kind: StepTool, Config: map[string]any{"tool": "flush"}, State: StepPending},
+	})
+	wf.CurrentStep = "compose-content"
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	_ = store.Save(wf)
+
+	rec := &reopenHookRecorder{}
+	engine.SetHooks(rec)
+
+	if err := engine.Reopen("wf-create-collection-19"); err != nil {
+		t.Fatalf("Reopen should succeed targeting CurrentStep, got: %v", err)
+	}
+
+	loaded, _ := store.Load("wf-create-collection-19")
+	if loaded.State != StateWaitingApproval {
+		t.Errorf("after reopen: state = %s, want waiting_approval", loaded.State)
+	}
+	if loaded.Error != "" {
+		t.Errorf("after reopen: error = %q, want empty", loaded.Error)
+	}
+
+	// The hook must name the CurrentStep gate, not any other pending approval.
+	fired := rec.find(EventWorkflowApprovalNeeded)
+	if fired == nil {
+		t.Fatal("Reopen did not fire EventWorkflowApprovalNeeded")
+	}
+	if fired["step_id"] != "compose-content" {
+		t.Errorf("hook step_id = %v, want compose-content", fired["step_id"])
+	}
+	if fired["reason"] != "reopened" {
+		t.Errorf("hook reason = %v, want reopened", fired["reason"])
+	}
+
+	// The targeted gate stays StepPending (Reopen doesn't touch steps)...
+	if loaded.GetStep("compose-content").State != StepPending {
+		t.Errorf("compose-content state = %s, want pending", loaded.GetStep("compose-content").State)
+	}
+	// ...and the other not-yet-reached approval steps are UNTOUCHED — still
+	// StepPending, exactly as before reopen. This is the core regression
+	// invariant: Reopen must not perturb future placeholder pendings.
+	for _, id := range []string{"validate", "create-draft", "go-live"} {
+		if s := loaded.GetStep(id); s == nil {
+			t.Errorf("step %s missing", id)
+		} else if s.State != StepPending {
+			t.Errorf("step %s state = %s, want pending (untouched)", id, s.State)
+		}
 	}
 }
 
@@ -882,6 +957,7 @@ func TestReopen_FiresApprovalNeededHook(t *testing.T) {
 	wf := NewWorkflow("wf-reopen-hook", "ReopenHook", "telegram:1", []Step{
 		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
 	})
+	wf.CurrentStep = "approve"
 	wf.State = StateCancelled
 	wf.Error = "cancelled by user"
 	_ = store.Save(wf)

@@ -208,17 +208,24 @@ func (e *Engine) rejectApproval(workflowID string, w *Workflow) error {
 }
 
 // Reopen transitions a cancelled workflow back to waiting_approval, provided
-// it is safely resumable — i.e. there is exactly one pending approval step
-// (the gate it was waiting on when cancelled; Cancel only touches workflow-level
-// State/Error, so that step is still StepPending). This is the inverse of Cancel
-// for the "stop parking this, needs a human decision" cleanup pattern: once the
-// human resolves the blocking issue, the caller can Reopen and then proceed with
-// a normal HandleApproval/HandleApprovalWithData on the SAME workflow.
+// it is safely resumable — i.e. its CurrentStep points at a pending approval
+// step (the gate it was waiting on when cancelled; Cancel only touches
+// workflow-level State/Error, so that step is still StepPending). This is the
+// inverse of Cancel for the "stop parking this, needs a human decision"
+// cleanup pattern: once the human resolves the blocking issue, the caller can
+// Reopen and then proceed with a normal HandleApproval/HandleApprovalWithData
+// on the SAME workflow.
 //
-// It does NOT touch step states — the pending approval step is already correctly
-// StepPending, ready for HandleApproval right after. If there is no pending
-// approval step (cancelled before reaching any approval gate, or a workflow with
-// no approval steps at all) there is nothing to reopen INTO and an error is returned.
+// It does NOT touch step states — the pending approval step is already
+// correctly StepPending, ready for HandleApproval right after. Step selection
+// uses the workflow's own CurrentStep field (the authoritative "which step am
+// I actually blocked on" signal) rather than counting pending approval steps:
+// every not-yet-reached approval step defaults to StepPending from creation,
+// so a count-based scan cannot distinguish "the one it's blocked on" from
+// "future placeholder pendings" and would refuse any workflow cancelled before
+// its final approval gate. If CurrentStep is empty, or points at a step that is
+// missing / not a pending approval step, there is nothing to reopen INTO and an
+// error is returned.
 func (e *Engine) Reopen(workflowID string) error {
 	w, err := e.loadWorkflow(workflowID)
 	if err != nil {
@@ -229,21 +236,17 @@ func (e *Engine) Reopen(workflowID string) error {
 		return fmt.Errorf("workflow %s is %s, not cancelled", workflowID, w.State)
 	}
 
-	// Reuse the exact same scan pattern registerWFStatus (mcp_tools.go) uses to
-	// compute pending_approval: s.Kind == StepApproval && s.State == StepPending.
-	// There must be EXACTLY ONE such step — the gate it was waiting on when
-	// cancelled. Zero means nothing to reopen into; >1 is an inconsistent state
-	// we refuse to silently paper over.
-	pendingCount := 0
-	var pendingStepID string
-	for _, s := range w.Steps {
-		if s.Kind == StepApproval && s.State == StepPending {
-			pendingCount++
-			pendingStepID = s.ID
-		}
+	if w.CurrentStep == "" {
+		return fmt.Errorf("workflow %s has no current step, nothing to reopen into", workflowID)
 	}
-	if pendingCount != 1 {
-		return fmt.Errorf("workflow %s has %d pending approval steps, need exactly 1 to reopen", workflowID, pendingCount)
+
+	step := w.GetStep(w.CurrentStep)
+	if step == nil {
+		return fmt.Errorf("workflow %s current step %q not found in steps", workflowID, w.CurrentStep)
+	}
+
+	if step.Kind != StepApproval || step.State != StepPending {
+		return fmt.Errorf("workflow %s current step %q is not a pending approval step, nothing to reopen into", workflowID, w.CurrentStep)
 	}
 
 	if err := e.store.Modify(workflowID, func(w *Workflow) {
@@ -260,7 +263,7 @@ func (e *Engine) Reopen(workflowID string) error {
 	// again, same as it would for a fresh approval gate.
 	e.fireHook(EventWorkflowApprovalNeeded, map[string]any{
 		"workflow_id": workflowID,
-		"step_id":     pendingStepID,
+		"step_id":     step.ID,
 		"reason":      "reopened",
 	})
 	return nil
