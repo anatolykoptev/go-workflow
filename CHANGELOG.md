@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.1](https://github.com/anatolykoptev/go-workflow/compare/v0.17.0...v0.17.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **reopen:** select step via CurrentStep instead of pending-approval count ([#20](https://github.com/anatolykoptev/go-workflow/issues/20)) ([1bd6c5c](https://github.com/anatolykoptev/go-workflow/commit/1bd6c5c2d681352f872ed2abd1dadb711bccac86))
+
 ## [0.17.0](https://github.com/anatolykoptev/go-workflow/compare/v0.16.1...v0.17.0) (2026-07-16)
 
 
