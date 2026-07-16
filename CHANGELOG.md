@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.0](https://github.com/anatolykoptev/go-workflow/compare/v0.16.1...v0.17.0) (2026-07-16)
+
+
+### Features
+
+* add Engine.Reopen + wf_reopen MCP tool to resume cancelled workflows ([#16](https://github.com/anatolykoptev/go-workflow/issues/16)) ([#17](https://github.com/anatolykoptev/go-workflow/issues/17)) ([1a9af8e](https://github.com/anatolykoptev/go-workflow/commit/1a9af8e6501825b56585b1e8b1a6f4ea6d7d9e2e))
+
 ## [0.16.1](https://github.com/anatolykoptev/go-workflow/compare/v0.16.0...v0.16.1) (2026-06-21)
 
 
