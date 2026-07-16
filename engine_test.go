@@ -717,6 +717,221 @@ func TestHandleApprovalWithData_NilFallback(t *testing.T) {
 	}
 }
 
+// --- engine: reopen cancelled workflow ---
+
+// TestReopen_HappyPath verifies the core fix for issue #16: a cancelled
+// workflow that was waiting on an approval step can be reopened back to
+// waiting_approval, after which a normal HandleApproval succeeds and the
+// workflow proceeds past that step.
+func TestReopen_HappyPath(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-reopen", "Reopen", "telegram:1", []Step{
+		{ID: "do", Kind: StepTool, Config: map[string]any{"tool": "ta"}, State: StepPending},
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, DependsOn: []string{"do"}, State: StepPending},
+		{ID: "finish", Kind: StepTool, Config: map[string]any{"tool": "tb"}, DependsOn: []string{"approve"}, State: StepPending},
+	})
+	_ = store.Save(wf)
+	_ = engine.Start(context.Background(), "wf-reopen")
+
+	// Should be waiting on the approval step.
+	loaded, _ := store.Load("wf-reopen")
+	if loaded.State != StateWaitingApproval {
+		t.Fatalf("precondition: state = %s, want waiting_approval", loaded.State)
+	}
+
+	// Cancel it (the "stop parking this" cleanup step from the issue).
+	if err := engine.Cancel("wf-reopen"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	loaded, _ = store.Load("wf-reopen")
+	if loaded.State != StateCancelled {
+		t.Fatalf("after cancel: state = %s, want cancelled", loaded.State)
+	}
+
+	// wf_approve on a cancelled workflow must STILL fail — unchanged behavior.
+	if err := engine.HandleApproval("wf-reopen", true); err == nil {
+		t.Fatal("HandleApproval on cancelled workflow should fail, got nil")
+	}
+
+	// Reopen it.
+	if err := engine.Reopen("wf-reopen"); err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	loaded, _ = store.Load("wf-reopen")
+	if loaded.State != StateWaitingApproval {
+		t.Fatalf("after reopen: state = %s, want waiting_approval", loaded.State)
+	}
+	if loaded.Error != "" {
+		t.Errorf("after reopen: error = %q, want empty", loaded.Error)
+	}
+	// The pending approval step must remain StepPending (Reopen doesn't touch steps).
+	if loaded.GetStep("approve").State != StepPending {
+		t.Errorf("after reopen: approve step state = %s, want pending", loaded.GetStep("approve").State)
+	}
+
+	// Now a normal HandleApproval succeeds and the workflow proceeds.
+	if err := engine.HandleApproval("wf-reopen", true); err != nil {
+		t.Fatalf("HandleApproval after reopen: %v", err)
+	}
+	_ = engine.RunToCompletion(context.Background(), "wf-reopen")
+
+	loaded, _ = store.Load("wf-reopen")
+	if loaded.State != StateCompleted {
+		t.Errorf("final state = %s, want completed", loaded.State)
+	}
+	if loaded.GetStep("finish").State != StepCompleted {
+		t.Errorf("finish step state = %s, want completed", loaded.GetStep("finish").State)
+	}
+}
+
+// TestReopen_NotCancelled guards against reopening a workflow that isn't
+// cancelled (e.g. still running) — must error, not silently no-op.
+func TestReopen_NotCancelled(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-running", "Running", "telegram:1", []Step{
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.State = StateRunning
+	_ = store.Save(wf)
+
+	err := engine.Reopen("wf-running")
+	if err == nil {
+		t.Fatal("Reopen on a running workflow should fail, got nil")
+	}
+	if !strings.Contains(err.Error(), "not cancelled") {
+		t.Errorf("Reopen error = %q, want it to mention 'not cancelled'", err.Error())
+	}
+}
+
+// TestReopen_NoPendingApproval guards against reopening a cancelled workflow
+// that has no pending approval step to reopen INTO — must error.
+func TestReopen_NoPendingApproval(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	// A workflow with no approval steps at all — cancelled before reaching any
+	// approval gate. There is nothing to reopen into.
+	wf := NewWorkflow("wf-noapprove", "NoApprove", "telegram:1", []Step{
+		{ID: "a", Kind: StepTool, Config: map[string]any{"tool": "ta"}, State: StepPending},
+		{ID: "b", Kind: StepTool, Config: map[string]any{"tool": "tb"}, DependsOn: []string{"a"}, State: StepPending},
+	})
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	_ = store.Save(wf)
+
+	err := engine.Reopen("wf-noapprove")
+	if err == nil {
+		t.Fatal("Reopen on a cancelled workflow with no pending approval step should fail, got nil")
+	}
+	if !strings.Contains(err.Error(), "0 pending approval steps") {
+		t.Errorf("Reopen error = %q, want it to name the count-guard reason (0 pending approval steps)", err.Error())
+	}
+}
+
+// TestReopen_MultiplePendingApprovals_Refuses guards the >1 branch of the
+// pending-approval-count check: a workflow with two concurrent dep-free
+// approval steps both StepPending (reachable via runParallel dispatch of
+// two approval gates with no depends_on between them) must refuse to
+// reopen rather than silently picking one — an inconsistent state we don't
+// paper over.
+func TestReopen_MultiplePendingApprovals_Refuses(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	wf := NewWorkflow("wf-multi-approve", "MultiApprove", "telegram:1", []Step{
+		{ID: "approve-a", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+		{ID: "approve-b", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	_ = store.Save(wf)
+
+	err := engine.Reopen("wf-multi-approve")
+	if err == nil {
+		t.Fatal("Reopen with 2 pending approval steps should fail, got nil")
+	}
+	if !strings.Contains(err.Error(), "2 pending approval steps") {
+		t.Errorf("Reopen error = %q, want it to name the count-guard reason (2 pending approval steps)", err.Error())
+	}
+}
+
+// TestReopen_FiresApprovalNeededHook guards the event-emission parity fixed
+// alongside issue #16: every OTHER entry into WaitingApproval fires
+// EventWorkflowApprovalNeeded (interrupt_after, interrupt_before,
+// handleApprovalRequired) so a hook subscriber (approval-notification/UI
+// driver) learns a decision is needed. Reopen must fire it too — a
+// reopened workflow re-entering WaitingApproval is exactly such a case,
+// and a subscriber that only ever hears the first cancel would otherwise
+// never learn the workflow needs attention again.
+func TestReopen_FiresApprovalNeededHook(t *testing.T) {
+	t.Parallel()
+	runner := &mockToolRunner{}
+	engine, store := newTestEngine(t, runner)
+
+	rec := &reopenHookRecorder{}
+	engine.SetHooks(rec)
+
+	wf := NewWorkflow("wf-reopen-hook", "ReopenHook", "telegram:1", []Step{
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	_ = store.Save(wf)
+
+	if err := engine.Reopen("wf-reopen-hook"); err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+
+	fired := rec.find(EventWorkflowApprovalNeeded)
+	if fired == nil {
+		t.Fatal("Reopen did not fire EventWorkflowApprovalNeeded")
+	}
+	if fired["workflow_id"] != "wf-reopen-hook" {
+		t.Errorf("hook data workflow_id = %v, want wf-reopen-hook", fired["workflow_id"])
+	}
+	if fired["step_id"] != "approve" {
+		t.Errorf("hook data step_id = %v, want approve", fired["step_id"])
+	}
+	if fired["reason"] != "reopened" {
+		t.Errorf("hook data reason = %v, want reopened", fired["reason"])
+	}
+}
+
+// reopenHookRecorder is a minimal HookPublisher test double recording every
+// Fire call's event name AND data payload for assertion (distinct from
+// hooks_test.go's hookRecorder, which only records event names).
+type reopenHookRecorder struct {
+	calls []struct {
+		event string
+		data  map[string]any
+	}
+}
+
+func (r *reopenHookRecorder) Fire(event string, data map[string]any) int {
+	r.calls = append(r.calls, struct {
+		event string
+		data  map[string]any
+	}{event, data})
+	return 1
+}
+
+func (r *reopenHookRecorder) find(event string) map[string]any {
+	for _, c := range r.calls {
+		if c.event == event {
+			return c.data
+		}
+	}
+	return nil
+}
+
 // suppress unused import warnings
 var (
 	_ = fmt.Sprintf

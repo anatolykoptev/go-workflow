@@ -148,6 +148,75 @@ func TestMCPTools_Cancel(t *testing.T) {
 	}
 }
 
+func TestMCPTools_Reopen(t *testing.T) {
+	mcpURL, eng := setupMCPToolsTest(t)
+
+	// A cancelled workflow that was waiting on an approval step.
+	wf := NewWorkflow("wf-reopen-mcp", "reopen test", "user", []Step{
+		{ID: "s1", Kind: StepNoop, Config: map[string]any{}, State: StepCompleted},
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, DependsOn: []string{"s1"}, State: StepPending},
+	})
+	wf.State = StateCancelled
+	wf.Error = "cancelled by user"
+	if err := eng.Store().Save(wf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	reopenResult := callWFTool(t, mcpURL, "wf_reopen", map[string]any{
+		"workflow_id": "wf-reopen-mcp",
+	})
+
+	if !strings.Contains(reopenResult, string(StateWaitingApproval)) {
+		t.Errorf("wf_reopen: expected %q in response, got: %s", StateWaitingApproval, reopenResult)
+	}
+
+	// Verify via store that it's actually waiting_approval again.
+	loaded, ok := eng.Store().Load("wf-reopen-mcp")
+	if !ok {
+		t.Fatal("workflow not found after reopen")
+	}
+	if loaded.State != StateWaitingApproval {
+		t.Errorf("state = %q, want %q", loaded.State, StateWaitingApproval)
+	}
+	if loaded.Error != "" {
+		t.Errorf("error = %q, want empty", loaded.Error)
+	}
+}
+
+func TestMCPTools_Reopen_NotCancelled(t *testing.T) {
+	mcpURL, eng := setupMCPToolsTest(t)
+
+	// A running workflow — reopening must fail (error result), not silently no-op.
+	wf := NewWorkflow("wf-reopen-running", "reopen running", "user", []Step{
+		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.State = StateRunning
+	if err := eng.Store().Save(wf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Call the runner directly: IsError=true results come back as a Go error,
+	// which callWFTool would turn into a t.Fatalf — we want to inspect it.
+	runner := NewMCPToolRunner(map[string]string{"wf": mcpURL})
+	t.Cleanup(func() { _ = runner.Close() })
+
+	_, err := runner.Execute(context.Background(), "wf_reopen", map[string]any{
+		"workflow_id": "wf-reopen-running",
+	})
+	if err == nil {
+		t.Fatal("wf_reopen on running workflow: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not cancelled") {
+		t.Errorf("wf_reopen error = %q, want it to mention 'not cancelled'", err.Error())
+	}
+
+	// State must be unchanged.
+	loaded, _ := eng.Store().Load("wf-reopen-running")
+	if loaded.State != StateRunning {
+		t.Errorf("state = %q, want unchanged %q", loaded.State, StateRunning)
+	}
+}
+
 func TestMCPTools_List(t *testing.T) {
 	mcpURL, eng := setupMCPToolsTest(t)
 
@@ -177,7 +246,7 @@ func TestRegisterMCPTools_ReturnsCount(t *testing.T) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "count-test"}, nil)
 	n := RegisterMCPTools(server, MCPDeps{Engine: eng, Templates: tmplStore})
 
-	if n != 6 {
-		t.Fatalf("RegisterMCPTools returned %d, want 6", n)
+	if n != 7 {
+		t.Fatalf("RegisterMCPTools returned %d, want 7", n)
 	}
 }

@@ -41,6 +41,10 @@ type wfCancelInput struct {
 	WorkflowID string `json:"workflow_id" jsonschema:"Workflow ID"`
 }
 
+type wfReopenInput struct {
+	WorkflowID string `json:"workflow_id" jsonschema:"Workflow ID"`
+}
+
 type wfTemplatesInput struct{}
 
 // Output types.
@@ -101,6 +105,7 @@ func RegisterMCPTools(server *mcp.Server, deps MCPDeps) int {
 		registerWFApprove,
 		registerWFList,
 		registerWFCancel,
+		registerWFReopen,
 		registerWFTemplates,
 	}
 	for _, fn := range tools {
@@ -210,6 +215,16 @@ func registerWFCancel(server *mcp.Server, deps MCPDeps) {
 				return errResult(fmt.Sprintf("cancel: %v", err))
 			}
 			return textResult(map[string]any{"workflow_id": input.WorkflowID, "state": StateCancelled})
+		})
+}
+
+func registerWFReopen(server *mcp.Server, deps MCPDeps) {
+	mcp.AddTool(server, &mcp.Tool{Name: "wf_reopen", Description: "Reopen a cancelled workflow back to waiting_approval (only if it has a pending approval step to resume)"},
+		func(_ context.Context, _ *mcp.CallToolRequest, input wfReopenInput) (*mcp.CallToolResult, any, error) {
+			if err := deps.Engine.Reopen(input.WorkflowID); err != nil {
+				return errResult(fmt.Sprintf("reopen: %v", err))
+			}
+			return textResult(map[string]any{"workflow_id": input.WorkflowID, "state": StateWaitingApproval})
 		})
 }
 
