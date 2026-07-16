@@ -156,6 +156,7 @@ func TestMCPTools_Reopen(t *testing.T) {
 		{ID: "s1", Kind: StepNoop, Config: map[string]any{}, State: StepCompleted},
 		{ID: "approve", Kind: StepApproval, Config: map[string]any{}, DependsOn: []string{"s1"}, State: StepPending},
 	})
+	wf.CurrentStep = "approve"
 	wf.State = StateCancelled
 	wf.Error = "cancelled by user"
 	if err := eng.Store().Save(wf); err != nil {
