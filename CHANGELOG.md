@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.0](https://github.com/anatolykoptev/go-workflow/compare/v0.18.0...v0.19.0) (2026-07-17)
+
+
+### Features
+
+* **approval:** add optional per-gate timeout with auto-cancel via the watchdog ([#34](https://github.com/anatolykoptev/go-workflow/issues/34)) ([2b6f983](https://github.com/anatolykoptev/go-workflow/commit/2b6f983610c5d2d8b13a24c3aa93cf359bde3190))
+
 ## [0.18.0](https://github.com/anatolykoptev/go-workflow/compare/v0.17.2...v0.18.0) (2026-07-17)
 
 
