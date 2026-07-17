@@ -155,12 +155,15 @@ func registerWFStatus(server *mcp.Server, deps MCPDeps) {
 				return errResult(fmt.Sprintf("workflow %q not found", input.WorkflowID))
 			}
 			summaries := make([]wfStepSummary, len(wf.Steps))
-			var pending string
 			for i, s := range wf.Steps {
 				summaries[i] = wfStepSummary{ID: s.ID, Kind: s.Kind, State: s.State, Error: s.Error}
-				if s.Kind == StepApproval && s.State == StepPending {
-					pending = s.ID
-				}
+			}
+			// pending_approval is derived from the authoritative CurrentStep via
+			// BlockingStep, not an independent scan — see issue #23. Keeps this
+			// field in sync with HandleApproval/HandleApprovalWithData's target.
+			var pending string
+			if gate := wf.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
+				pending = gate.ID
 			}
 			return textResult(wfStatusOutput{ID: wf.ID, State: wf.State, Steps: summaries, PendingApproval: pending, Error: wf.Error})
 		})
