@@ -296,12 +296,12 @@ func TestApprovalTimeout_InterruptPauseNotTouched(t *testing.T) {
 // regression test for issue #25 bug 1 (BLOCKER, deterministic): when a workflow
 // times out and is auto-cancelled by cancelExpiredApprovals, its
 // Context[gate.ID+"_approval_deadline_ms"] key is left behind (Cancel never
-// deletes it). A human then calls Reopen to look at it — the workflow goes back
-// to StateWaitingApproval, BlockingStep() resolves to the SAME gate, and its
-// OLD expired deadline key is still sitting there. Without the fix, the very
-// next watchdog tick (cancelExpiredApprovals) finds that same gate with the
-// same already-past deadline and cancels the workflow AGAIN — before the human
-// has any real chance to act, repeating every tick. The fix makes Reopen's
+// deletes it). An operator then calls Reopen to look at it — the workflow goes
+// back to StateWaitingApproval, BlockingStep() resolves to the SAME gate, and
+// its OLD expired deadline key is still sitting there. Without the fix, the
+// very next watchdog tick (cancelExpiredApprovals) finds that same gate with
+// the same already-past deadline and cancels the workflow AGAIN — before the
+// operator has any real chance to act, repeating every tick. The fix makes Reopen's
 // store.Modify closure clear the stale deadline. This test drives the timeout
 // -> cancel path the same way TestApprovalTimeout_ExpiredDeadline_Cancelled
 // does, then calls Reopen, then calls cancelExpiredApprovals() again
@@ -361,7 +361,7 @@ func TestApprovalTimeout_ReopenClearsStaleDeadline_NotReCancelled(t *testing.T) 
 // TestApprovalTimeout_ConcurrentlyApproved_NotCancelled is the regression test
 // for issue #25 bug 2 (MAJOR, real race window): cancelExpiredApprovals decides
 // which workflows to cancel based on a stale store.List(StateWaitingApproval)
-// snapshot, then mutates. If a human calls HandleApproval in the window between
+// snapshot, then mutates. If an operator calls HandleApproval in the window between
 // the List() snapshot and the actual mutation, the workflow has already moved
 // to StateRunning, its deadline key was already deleted, and ResumeAsync may
 // already be executing downstream steps — yet the old code called the public
@@ -461,10 +461,12 @@ type staleSnapshotBackend struct {
 	stale map[WorkflowState][]*Workflow
 }
 
-func (s *staleSnapshotBackend) Save(w *Workflow) error                  { return s.inner.Save(w) }
-func (s *staleSnapshotBackend) Load(id string) (*Workflow, bool)        { return s.inner.Load(id) }
-func (s *staleSnapshotBackend) Delete(id string) error                  { return s.inner.Delete(id) }
-func (s *staleSnapshotBackend) ListByOwner(owner string) []*Workflow    { return s.inner.ListByOwner(owner) }
+func (s *staleSnapshotBackend) Save(w *Workflow) error           { return s.inner.Save(w) }
+func (s *staleSnapshotBackend) Load(id string) (*Workflow, bool) { return s.inner.Load(id) }
+func (s *staleSnapshotBackend) Delete(id string) error           { return s.inner.Delete(id) }
+func (s *staleSnapshotBackend) ListByOwner(owner string) []*Workflow {
+	return s.inner.ListByOwner(owner)
+}
 func (s *staleSnapshotBackend) FindByIdempotencyKey(key string) *Workflow {
 	return s.inner.FindByIdempotencyKey(key)
 }
