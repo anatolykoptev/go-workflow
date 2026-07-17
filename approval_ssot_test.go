@@ -53,7 +53,7 @@ func TestApprovalStatusSSOT_Issue23(t *testing.T) {
 		t.Fatalf("Save approve wf: %v", err)
 	}
 
-	if err := eng.HandleApproval("wf-ssot-approve", true); err != nil {
+	if err := eng.HandleApproval("wf-ssot-approve", true, ""); err != nil {
 		t.Fatalf("HandleApproval: %v", err)
 	}
 	loaded, _ := eng.Store().Load("wf-ssot-approve")
