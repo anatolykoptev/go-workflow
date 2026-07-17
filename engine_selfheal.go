@@ -175,7 +175,7 @@ func (e *Engine) cancelExpiredApprovals() {
 		// every waiting workflow on every tick. The REAL decision (and the
 		// only state mutation) happens inside store.Modify below, re-checked
 		// against fresh state to close the TOCTOU window against a concurrent
-		// HandleApproval: if a human approves in the window between this List()
+		// HandleApproval: if an operator approves in the window between this List()
 		// snapshot and the Modify below, the workflow has already moved to
 		// StateRunning, its deadline key was already deleted, and ResumeAsync
 		// may already be executing downstream steps. The fresh re-check inside

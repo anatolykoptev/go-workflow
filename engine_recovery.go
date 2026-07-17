@@ -370,10 +370,10 @@ func (e *Engine) Reopen(workflowID string) error {
 		// key (Cancel never deletes it; only HandleApproval's normal-resolve
 		// path did). Left in place, the very next watchdog tick would find the
 		// SAME gate with the SAME already-expired deadline and cancel the
-		// freshly-reopened workflow again before the human can act — a
+		// freshly-reopened workflow again before the operator can act — a
 		// deterministic re-cancel loop. Reopen intentionally does NOT recompute
 		// nor reapply a fresh timeout from the step's original config: the
-		// original auto-timeout already served its purpose (it got the human's
+		// original auto-timeout already served its purpose (it got the operator's
 		// attention), so we simply clear the stale one, matching how a normal
 		// HandleApproval resolve already clears it.
 		delete(w.Context, step.ID+"_approval_deadline_ms")
