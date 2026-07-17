@@ -137,6 +137,7 @@ func (e *Engine) runWatchdogCycle() {
 	}
 
 	e.resumeSuspended()
+	e.cancelExpiredApprovals()
 }
 
 // StopWatchdog stops the background watchdog goroutine.

@@ -197,6 +197,14 @@ func (e *Engine) HandleApproval(workflowID string, approved bool, stepID string)
 				gate.Result = approvalResult
 				gate.EndedAt = time.Now().UnixMilli()
 				w.Context[gate.ID] = approvalResult
+				// Hygiene (issue #25): clear the per-gate approval timeout
+				// deadline so long-lived workflows with many approval cycles
+				// don't accumulate stale _approval_deadline_ms keys in Context
+				// unbounded. Not correctness-critical — cancelExpiredApprovals
+				// scopes strictly to BlockingStep()'s current gate, so a stale
+				// key from a resolved gate can never trigger a wrong cancel —
+				// but cheap cleanup alongside the gate-resolution write.
+				delete(w.Context, gate.ID+"_approval_deadline_ms")
 			}
 		}
 		if w.CurrentStep != "" {
@@ -273,6 +281,14 @@ func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data m
 					gate.Result = approvalResult
 					w.Context[gate.ID] = approvalResult
 				}
+				// Hygiene (issue #25): clear the per-gate approval timeout
+				// deadline so long-lived workflows with many approval cycles
+				// don't accumulate stale _approval_deadline_ms keys in Context
+				// unbounded. Not correctness-critical — cancelExpiredApprovals
+				// scopes strictly to BlockingStep()'s current gate, so a stale
+				// key from a resolved gate can never trigger a wrong cancel —
+				// but cheap cleanup alongside the gate-resolution write.
+				delete(w.Context, gate.ID+"_approval_deadline_ms")
 			}
 		}
 		if w.CurrentStep != "" {
@@ -348,6 +364,19 @@ func (e *Engine) Reopen(workflowID string) error {
 		w.State = StateWaitingApproval
 		w.Error = ""
 		w.UpdatedAt = time.Now().UnixMilli()
+		// Clear the stale per-gate approval timeout deadline (issue #25 bug
+		// fix): if this workflow was auto-cancelled by cancelExpiredApprovals,
+		// its Context still holds the now-PAST gate.ID+"_approval_deadline_ms"
+		// key (Cancel never deletes it; only HandleApproval's normal-resolve
+		// path did). Left in place, the very next watchdog tick would find the
+		// SAME gate with the SAME already-expired deadline and cancel the
+		// freshly-reopened workflow again before the human can act — a
+		// deterministic re-cancel loop. Reopen intentionally does NOT recompute
+		// nor reapply a fresh timeout from the step's original config: the
+		// original auto-timeout already served its purpose (it got the human's
+		// attention), so we simply clear the stale one, matching how a normal
+		// HandleApproval resolve already clears it.
+		delete(w.Context, step.ID+"_approval_deadline_ms")
 	}); err != nil {
 		return err
 	}
