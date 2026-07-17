@@ -31,6 +31,7 @@ type wfApproveInput struct {
 	WorkflowID string         `json:"workflow_id" jsonschema:"Workflow ID"`
 	Approved   bool           `json:"approved"    jsonschema:"Approve or reject"`
 	Data       map[string]any `json:"data"        jsonschema:"Optional approval data"`
+	StepID     string         `json:"step_id"     jsonschema:"Optional: target a specific approval step by id. Omit to resolve the single blocking gate automatically (BlockingStep)."`
 }
 
 type wfListInput struct {
@@ -173,11 +174,11 @@ func registerWFApprove(server *mcp.Server, deps MCPDeps) {
 	mcp.AddTool(server, &mcp.Tool{Name: "wf_approve", Description: "Approve or reject a waiting workflow"},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input wfApproveInput) (*mcp.CallToolResult, any, error) {
 			if input.Data != nil {
-				if err := deps.Engine.HandleApprovalWithData(input.WorkflowID, input.Approved, input.Data); err != nil {
+				if err := deps.Engine.HandleApprovalWithData(input.WorkflowID, input.Approved, input.Data, input.StepID); err != nil {
 					return errResult(fmt.Sprintf("approval: %v", err))
 				}
 			} else {
-				if err := deps.Engine.HandleApproval(input.WorkflowID, input.Approved); err != nil {
+				if err := deps.Engine.HandleApproval(input.WorkflowID, input.Approved, input.StepID); err != nil {
 					return errResult(fmt.Sprintf("approval: %v", err))
 				}
 			}

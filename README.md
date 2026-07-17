@@ -161,7 +161,7 @@ engine := workflow.NewEngine(store,
 )
 
 // Later, when approved:
-engine.HandleApproval("wf-123", true)  // or false to reject
+engine.HandleApproval("wf-123", true, "")  // step_id "" = auto-resolve the blocking gate; or pass a specific step id
 engine.ResumeAsync(ctx, "wf-123")
 ```
 

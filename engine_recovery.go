@@ -114,7 +114,21 @@ func (e *Engine) resetStepsToState(w *Workflow, from, to StepState) {
 }
 
 // HandleApproval resumes or rejects a workflow waiting for approval.
-func (e *Engine) HandleApproval(workflowID string, approved bool) error {
+//
+// stepID optionally targets a specific approval gate by id. When empty, the
+// gate is resolved via BlockingStep() (the single-gate auto-resolution from
+// #23 — backward-compatible). When set, the named step must exist, be a
+// pending approval gate (Kind==StepApproval && State==StepPending), AND be
+// reachable — every step in its DependsOn must already be in a
+// terminal-satisfied state (completed/skipped/dead-lettered, the same set
+// findAllRunnable treats as "completed"), else an error is returned and the
+// workflow is left untouched. This prevents out-of-order completion of a
+// downstream gate whose upstream hasn't run yet (issue #24 reachability guard).
+//
+// Rejection (approved==false) always cancels the WHOLE workflow regardless of
+// stepID — step_id scopes which gate is validated/targeted, not what gets
+// rejected; a valid target's rejection is workflow-global by design.
+func (e *Engine) HandleApproval(workflowID string, approved bool, stepID string) error {
 	w, err := e.loadWorkflow(workflowID)
 	if err != nil {
 		return err
@@ -124,26 +138,66 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 		return fmt.Errorf("workflow %s is %s, not waiting_approval", workflowID, w.State)
 	}
 
+	// Explicit step_id targeting (issue #24): validate the named gate is a
+	// pending approval step BEFORE any mutation, so a bad target returns a
+	// clear error and leaves the workflow untouched. When step_id is empty,
+	// resolution defers to BlockingStep() inside the Modify callback below
+	// (backward-compatible with the pre-#24 single-gate auto-resolution).
+	if stepID != "" {
+		step := w.GetStep(stepID)
+		if step == nil {
+			return fmt.Errorf("workflow %s step %q not found", workflowID, stepID)
+		}
+		if step.Kind != StepApproval || step.State != StepPending {
+			return fmt.Errorf("workflow %s step %q is not a pending approval step", workflowID, stepID)
+		}
+		// Reachability guard (issue #24): a pending approval gate that
+		// hasn't been reached yet (its DependsOn aren't all
+		// terminal-satisfied) must not be completable out of order —
+		// findAllRunnable would then never schedule it again, silently
+		// bypassing the human approval that was supposed to happen there.
+		if dep, ok := stepDepsSatisfied(w, step); !ok {
+			return fmt.Errorf("workflow %s step %q is not reachable yet: dependency %q is not completed", workflowID, stepID, dep)
+		}
+	}
+
 	if !approved {
 		return e.rejectApproval(workflowID, w)
 	}
 
 	return e.store.Modify(workflowID, func(w *Workflow) {
-		// Target selection defers to the authoritative CurrentStep via
-		// BlockingStep, so wf_status's pending_approval and this resolver
-		// can never disagree on which gate is being approved — see #23.
+		// Target selection: when stepID is set, resolve the NAMED gate
+		// explicitly (issue #24 — addressable approval targeting). When
+		// empty, defer to the authoritative CurrentStep via BlockingStep,
+		// so wf_status's pending_approval and this resolver can never
+		// disagree on which gate is being approved — see #23.
 		// BlockingStep returns nil for an active interrupt_before/
 		// interrupt_after pause point (a non-approval checkpoint — see #23
 		// round 4), so only a real pending approval gate reaches here; the
 		// Kind==StepApproval && State==StepPending guard is kept as a
-		// defensive check. When BlockingStep returns nil (interrupt pause
-		// or nothing to resolve), only the interrupt-list cleanup and
-		// State->StateRunning transition below run.
-		if gate := w.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
-			gate.State = StepCompleted
-			gate.Result = approvalResult
-			gate.EndedAt = time.Now().UnixMilli()
-			w.Context[gate.ID] = approvalResult
+		// defensive check (also guards the stepID path against a race that
+		// completes the named gate between the pre-Modify validation and
+		// here). The stepDepsSatisfied re-check extends that TOCTOU defense
+		// to reachability: if a race made the named gate's upstream regress
+		// to non-terminal between the pre-Modify validation and here, do
+		// NOT complete the gate (the workflow still transitions to Running
+		// and the real blocking gate gets scheduled normally). When the
+		// resolved gate is nil (interrupt pause or nothing to resolve),
+		// only the interrupt-list cleanup and State->StateRunning
+		// transition below run.
+		var gate *Step
+		if stepID != "" {
+			gate = w.GetStep(stepID)
+		} else {
+			gate = w.BlockingStep()
+		}
+		if gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
+			if _, ok := stepDepsSatisfied(w, gate); ok {
+				gate.State = StepCompleted
+				gate.Result = approvalResult
+				gate.EndedAt = time.Now().UnixMilli()
+				w.Context[gate.ID] = approvalResult
+			}
 		}
 		if w.CurrentStep != "" {
 			w.InterruptBefore = removeString(w.InterruptBefore, w.CurrentStep)
@@ -157,9 +211,11 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 // HandleApprovalWithData resumes a workflow with structured data from the approver.
 // Data is stored in wf.Context[stepID] for downstream steps to consume via $steps.{id}.result.
 // If data is nil, falls back to approvalResult string (same as HandleApproval).
-func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data map[string]any) error {
+//
+// stepID optionally targets a specific approval gate by id — see HandleApproval.
+func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data map[string]any, stepID string) error {
 	if !approved {
-		return e.HandleApproval(workflowID, false)
+		return e.HandleApproval(workflowID, false, stepID)
 	}
 
 	w, err := e.loadWorkflow(workflowID)
@@ -170,25 +226,53 @@ func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data m
 		return fmt.Errorf("workflow %s is %s, not waiting_approval", workflowID, w.State)
 	}
 
+	// Explicit step_id targeting (issue #24): validate the named gate is a
+	// pending approval step BEFORE any mutation — see HandleApproval.
+	if stepID != "" {
+		step := w.GetStep(stepID)
+		if step == nil {
+			return fmt.Errorf("workflow %s step %q not found", workflowID, stepID)
+		}
+		if step.Kind != StepApproval || step.State != StepPending {
+			return fmt.Errorf("workflow %s step %q is not a pending approval step", workflowID, stepID)
+		}
+		// Reachability guard (issue #24) — see HandleApproval.
+		if dep, ok := stepDepsSatisfied(w, step); !ok {
+			return fmt.Errorf("workflow %s step %q is not reachable yet: dependency %q is not completed", workflowID, stepID, dep)
+		}
+	}
+
 	return e.store.Modify(workflowID, func(w *Workflow) {
-		// Target selection defers to the authoritative CurrentStep via
-		// BlockingStep — same derivation as HandleApproval/wf_status (#23).
-		// BlockingStep returns nil for an active interrupt_before/
-		// interrupt_after pause point (a non-approval checkpoint — see #23
-		// round 4), so only a real pending approval gate reaches here; the
-		// Kind==StepApproval && State==StepPending guard is kept as a
-		// defensive check. When BlockingStep returns nil, only the
+		// Target selection: when stepID is set, resolve the NAMED gate
+		// explicitly (issue #24); otherwise defer to BlockingStep — same
+		// derivation as HandleApproval/wf_status (#23). BlockingStep returns
+		// nil for an active interrupt_before/interrupt_after pause point (a
+		// non-approval checkpoint — see #23 round 4), so only a real pending
+		// approval gate reaches here; the Kind==StepApproval &&
+		// State==StepPending guard is kept as a defensive check (also guards
+		// the stepID path against a race that completes the named gate
+		// between the pre-Modify validation and here). The stepDepsSatisfied
+		// re-check extends that TOCTOU defense to reachability — see
+		// HandleApproval. When the resolved gate is nil, only the
 		// interrupt-list cleanup and State->StateRunning transition below
 		// run, leaving the paused step to execute for real.
-		if gate := w.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
-			gate.State = StepCompleted
-			gate.EndedAt = time.Now().UnixMilli()
-			if data != nil {
-				gate.Result = data
-				w.Context[gate.ID] = data
-			} else {
-				gate.Result = approvalResult
-				w.Context[gate.ID] = approvalResult
+		var gate *Step
+		if stepID != "" {
+			gate = w.GetStep(stepID)
+		} else {
+			gate = w.BlockingStep()
+		}
+		if gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
+			if _, ok := stepDepsSatisfied(w, gate); ok {
+				gate.State = StepCompleted
+				gate.EndedAt = time.Now().UnixMilli()
+				if data != nil {
+					gate.Result = data
+					w.Context[gate.ID] = data
+				} else {
+					gate.Result = approvalResult
+					w.Context[gate.ID] = approvalResult
+				}
 			}
 		}
 		if w.CurrentStep != "" {

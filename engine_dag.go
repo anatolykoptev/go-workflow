@@ -94,6 +94,31 @@ func (e *Engine) findAllRunnable(w *Workflow) []string {
 	return runnable
 }
 
+// stepDepsSatisfied reports whether every step in s.DependsOn is in a
+// terminal-satisfied state — the same set findAllRunnable treats as
+// "completed" above (StepCompleted, StepSkipped, StepDeadLettered). Returns
+// the first unsatisfied dependency id (or "" when all are met); a dependency
+// referenced in DependsOn but absent from w.Steps, or one still
+// pending/running/failed, counts as unsatisfied. Used by the step_id
+// targeting path in HandleApproval/HandleApprovalWithData to refuse
+// completing an approval gate whose upstream hasn't run yet — see issue #24
+// reachability guard.
+func stepDepsSatisfied(w *Workflow, s *Step) (missing string, ok bool) {
+	for _, dep := range s.DependsOn {
+		d := w.GetStep(dep)
+		if d == nil {
+			return dep, false
+		}
+		switch d.State {
+		case StepCompleted, StepSkipped, StepDeadLettered:
+			continue
+		default:
+			return dep, false
+		}
+	}
+	return "", true
+}
+
 // loadWorkflow loads a workflow or returns a formatted error.
 func (e *Engine) loadWorkflow(workflowID string) (*Workflow, error) {
 	w, ok := e.store.Load(workflowID)

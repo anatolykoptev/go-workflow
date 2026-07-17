@@ -169,7 +169,7 @@ func TestApprovalResume(t *testing.T) {
 		t.Fatalf("state = %s, want waiting_approval", loaded.State)
 	}
 
-	if err := engine.HandleApproval("wf1", true); err != nil {
+	if err := engine.HandleApproval("wf1", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	_ = engine.RunToCompletion(context.Background(), "wf1")
@@ -191,7 +191,7 @@ func TestApprovalReject(t *testing.T) {
 	_ = store.Save(wf)
 	_ = engine.Start(context.Background(), "wf1")
 
-	_ = engine.HandleApproval("wf1", false)
+	_ = engine.HandleApproval("wf1", false, "")
 
 	loaded, _ := store.Load("wf1")
 	if loaded.State != StateCancelled {
@@ -680,7 +680,7 @@ func TestHandleApprovalWithData(t *testing.T) {
 	})
 
 	data := map[string]any{"selected": []any{"place1", "place2"}}
-	if err := engine.HandleApprovalWithData("wf-data", true, data); err != nil {
+	if err := engine.HandleApprovalWithData("wf-data", true, data, ""); err != nil {
 		t.Fatalf("HandleApprovalWithData: %v", err)
 	}
 
@@ -708,7 +708,7 @@ func TestHandleApprovalWithData_NilFallback(t *testing.T) {
 	_ = s.Save(wf)
 	_ = s.Modify("wf-nil", func(w *Workflow) { w.State = StateWaitingApproval })
 
-	if err := engine.HandleApprovalWithData("wf-nil", true, nil); err != nil {
+	if err := engine.HandleApprovalWithData("wf-nil", true, nil, ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	loaded, _ := s.Load("wf-nil")
@@ -752,7 +752,7 @@ func TestReopen_HappyPath(t *testing.T) {
 	}
 
 	// wf_approve on a cancelled workflow must STILL fail — unchanged behavior.
-	if err := engine.HandleApproval("wf-reopen", true); err == nil {
+	if err := engine.HandleApproval("wf-reopen", true, ""); err == nil {
 		t.Fatal("HandleApproval on cancelled workflow should fail, got nil")
 	}
 
@@ -773,7 +773,7 @@ func TestReopen_HappyPath(t *testing.T) {
 	}
 
 	// Now a normal HandleApproval succeeds and the workflow proceeds.
-	if err := engine.HandleApproval("wf-reopen", true); err != nil {
+	if err := engine.HandleApproval("wf-reopen", true, ""); err != nil {
 		t.Fatalf("HandleApproval after reopen: %v", err)
 	}
 	_ = engine.RunToCompletion(context.Background(), "wf-reopen")

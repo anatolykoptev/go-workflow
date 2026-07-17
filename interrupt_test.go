@@ -76,7 +76,7 @@ func TestInterruptBefore_ResumeAfterApproval(t *testing.T) {
 		t.Fatalf("state = %s, want waiting_approval", loaded.State)
 	}
 
-	if err := engine.HandleApproval("wf1", true); err != nil {
+	if err := engine.HandleApproval("wf1", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	_ = engine.RunToCompletion(context.Background(), "wf1")
@@ -111,7 +111,7 @@ func TestInterruptBefore_NonApprovalStep_ExecutesForReal(t *testing.T) {
 	if loaded.State != StateWaitingApproval {
 		t.Fatalf("state = %s, want waiting_approval", loaded.State)
 	}
-	if err := engine.HandleApproval("wfzzz", true); err != nil {
+	if err := engine.HandleApproval("wfzzz", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	_ = engine.RunToCompletion(context.Background(), "wfzzz")
@@ -160,7 +160,7 @@ func TestInterruptBefore_ResumeDoesNotBypassDownstreamApprovalGate(t *testing.T)
 
 	// Resume the interrupt checkpoint — this must ONLY clear the interrupt
 	// and flip state to running, NOT touch the downstream approval gate s2.
-	if err := engine.HandleApproval("wf-r4", true); err != nil {
+	if err := engine.HandleApproval("wf-r4", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	_ = engine.RunToCompletion(context.Background(), "wf-r4")
