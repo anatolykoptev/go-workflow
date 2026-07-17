@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.2](https://github.com/anatolykoptev/go-workflow/compare/v0.19.1...v0.19.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **approval:** stamp step id into timeout auto-cancel error + hook payload ([#39](https://github.com/anatolykoptev/go-workflow/issues/39)) ([1ab8f22](https://github.com/anatolykoptev/go-workflow/commit/1ab8f22777ddc82a1d57de4f70825aa6ee370780))
+
 ## [0.19.1](https://github.com/anatolykoptev/go-workflow/compare/v0.19.0...v0.19.1) (2026-07-17)
 
 
