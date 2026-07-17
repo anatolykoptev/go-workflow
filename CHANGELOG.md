@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.18.0](https://github.com/anatolykoptev/go-workflow/compare/v0.17.2...v0.18.0) (2026-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **approval:** Engine.HandleApproval and Engine.HandleApprovalWithData public signatures gained a trailing stepID string parameter. External Go- module consumers must pass "" to keep the previous auto-resolve behavior.
+
+### Features
+
+* **approval:** add step_id for addressable approval targeting ([#32](https://github.com/anatolykoptev/go-workflow/issues/32)) ([88ac6ab](https://github.com/anatolykoptev/go-workflow/commit/88ac6abcf5d4a02e6c5061fd1653c579ae8495f6))
+
 ## [0.17.2](https://github.com/anatolykoptev/go-workflow/compare/v0.17.1...v0.17.2) (2026-07-17)
 
 
