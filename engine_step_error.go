@@ -56,6 +56,18 @@ func (e *Engine) handleSuspend(workflowID, stepID string, step *Step, stepContex
 }
 
 // handleApprovalRequired transitions a step to waiting-for-approval state.
+//
+// If the approval step sets Config["approval_timeout_ms"] (a relative duration
+// in ms — e.g. 86400000 for 24h), an absolute deadline is computed as
+// now + timeout and stored in Context[stepID+"_approval_deadline_ms"]. The
+// watchdog's cancelExpiredApprovals() auto-cancels the workflow once that
+// deadline passes (issue #25). This is the ONLY entry into
+// StateWaitingApproval that wires a timeout — handleInterrupt and the
+// interrupt_after checkpoint in completeStep set StateWaitingApproval too but
+// for a different (non-approval) pause mechanism and are deliberately NOT
+// wired (see issue #25 out-of-scope note). The deadline key uses a distinct
+// "_approval_deadline_ms" suffix so it never collides with SuspendExecutor's
+// "_suspend_until_ms" keys.
 func (e *Engine) handleApprovalRequired(workflowID, stepID string, step *Step, endedAt int64) error {
 	_ = e.store.Modify(workflowID, func(w *Workflow) {
 		if s := w.GetStep(stepID); s != nil {
@@ -64,6 +76,15 @@ func (e *Engine) handleApprovalRequired(workflowID, stepID string, step *Step, e
 		}
 		w.State = StateWaitingApproval
 		w.UpdatedAt = time.Now().UnixMilli()
+		// Optional per-gate approval timeout (issue #25). Go JSON-decodes
+		// numbers as float64 — same unmarshal pattern SuspendExecutor uses
+		// for its suspend_until_ms config field. A positive duration
+		// computes an absolute deadline relative to when the approval-wait
+		// begins (a workflow author configures this ahead of time, before
+		// knowing when any given run will reach the gate).
+		if timeoutMS, ok := step.Config["approval_timeout_ms"].(float64); ok && timeoutMS > 0 {
+			w.Context[stepID+"_approval_deadline_ms"] = time.Now().UnixMilli() + int64(timeoutMS)
+		}
 	})
 	e.getMetrics().ApprovalsPending.Add(1)
 	e.log().Info("waiting for approval",
