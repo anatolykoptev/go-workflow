@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -210,7 +211,7 @@ func (e *Engine) cancelExpiredApprovals() {
 				return // deadline cleared/changed/not-yet-expired by the time we actually mutate
 			}
 			fresh.State = StateCancelled
-			fresh.Error = "approval timeout exceeded"
+			fresh.Error = fmt.Sprintf("approval timeout exceeded at step %q", freshGate.ID)
 			fresh.UpdatedAt = freshNow
 			cancelled = true
 			cancelledStepID = freshGate.ID
@@ -233,6 +234,7 @@ func (e *Engine) cancelExpiredApprovals() {
 			"workflow_id":   w.ID,
 			"workflow_name": w.Name,
 			"reason":        "approval_timeout",
+			"step_id":       cancelledStepID,
 		})
 		e.notifyCompletion(w.ID)
 		e.log().Warn("watchdog cancelled expired approval",

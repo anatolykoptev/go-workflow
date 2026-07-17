@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -127,6 +128,83 @@ func TestApprovalTimeout_ExpiredDeadline_Cancelled(t *testing.T) {
 	loaded, _ := store.Load("wf-expired")
 	if loaded.State != StateCancelled {
 		t.Errorf("state = %s, want cancelled (deadline expired)", loaded.State)
+	}
+}
+
+// TestApprovalTimeout_ExpiredDeadline_ErrorNamesStep is the issue #38
+// observability assertion: when cancelExpiredApprovals auto-cancels a workflow
+// past its approval deadline, the top-level wf.Error must name WHICH gate timed
+// out, so a downstream consumer can distinguish "cancelled at a late,
+// low-consequence gate after real work already ran" from "cancelled at an early
+// gate before any work" without fetching the full steps[] array. Mirrors
+// TestApprovalTimeout_ExpiredDeadline_Cancelled's setup. Falsification: if
+// fresh.Error is reverted to the generic "approval timeout exceeded" string
+// (no step id), the substring check fails.
+func TestApprovalTimeout_ExpiredDeadline_ErrorNamesStep(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	engine := NewEngine(store)
+
+	past := time.Now().Add(-time.Hour).UnixMilli()
+	wf := NewWorkflow("wf-err-step", "ErrStep", "test", []Step{
+		{ID: "gate", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.CurrentStep = "gate"
+	wf.State = StateWaitingApproval
+	wf.Context = map[string]any{"gate_approval_deadline_ms": int64(past)}
+	if err := store.Save(wf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	engine.cancelExpiredApprovals()
+
+	loaded, _ := store.Load("wf-err-step")
+	if loaded.State != StateCancelled {
+		t.Fatalf("state = %s, want cancelled (deadline expired)", loaded.State)
+	}
+	if !strings.Contains(loaded.Error, "gate") {
+		t.Errorf("Error = %q, want it to name the timed-out step id %q", loaded.Error, "gate")
+	}
+}
+
+// TestApprovalTimeout_ExpiredDeadline_HookCarriesStepID is the issue #38
+// hook-payload assertion: the EventWorkflowCancelled hook fired by
+// cancelExpiredApprovals must carry a "step_id" key equal to the expired gate's
+// id, so monitoring/alerting built on the hook can tell which gate caused the
+// auto-cancel without a full steps[] cross-reference. Uses the
+// reopenHookRecorder test double (the house style for hook-payload assertions,
+// per engine_test.go). Falsification: if the "step_id" key is removed from the
+// hook payload, fired["step_id"] is nil and the assertion fails.
+func TestApprovalTimeout_ExpiredDeadline_HookCarriesStepID(t *testing.T) {
+	t.Parallel()
+	store := newTestStore(t)
+	engine := NewEngine(store)
+
+	rec := &reopenHookRecorder{}
+	engine.SetHooks(rec)
+
+	past := time.Now().Add(-time.Hour).UnixMilli()
+	wf := NewWorkflow("wf-hook-step", "HookStep", "test", []Step{
+		{ID: "gate", Kind: StepApproval, Config: map[string]any{}, State: StepPending},
+	})
+	wf.CurrentStep = "gate"
+	wf.State = StateWaitingApproval
+	wf.Context = map[string]any{"gate_approval_deadline_ms": int64(past)}
+	if err := store.Save(wf); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	engine.cancelExpiredApprovals()
+
+	fired := rec.find(EventWorkflowCancelled)
+	if fired == nil {
+		t.Fatal("cancelExpiredApprovals did not fire EventWorkflowCancelled")
+	}
+	if fired["step_id"] != "gate" {
+		t.Errorf("hook step_id = %v, want %q", fired["step_id"], "gate")
+	}
+	if fired["reason"] != "approval_timeout" {
+		t.Errorf("hook reason = %v, want %q", fired["reason"], "approval_timeout")
 	}
 }
 
