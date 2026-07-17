@@ -129,15 +129,21 @@ func (e *Engine) HandleApproval(workflowID string, approved bool) error {
 	}
 
 	return e.store.Modify(workflowID, func(w *Workflow) {
-		for i := range w.Steps {
-			s := &w.Steps[i]
-			if s.Kind == StepApproval && s.State == StepPending {
-				s.State = StepCompleted
-				s.Result = approvalResult
-				s.EndedAt = time.Now().UnixMilli()
-				w.Context[s.ID] = approvalResult
-				break
-			}
+		// Target selection defers to the authoritative CurrentStep via
+		// BlockingStep, so wf_status's pending_approval and this resolver
+		// can never disagree on which gate is being approved — see #23.
+		// BlockingStep returns nil for an active interrupt_before/
+		// interrupt_after pause point (a non-approval checkpoint — see #23
+		// round 4), so only a real pending approval gate reaches here; the
+		// Kind==StepApproval && State==StepPending guard is kept as a
+		// defensive check. When BlockingStep returns nil (interrupt pause
+		// or nothing to resolve), only the interrupt-list cleanup and
+		// State->StateRunning transition below run.
+		if gate := w.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
+			gate.State = StepCompleted
+			gate.Result = approvalResult
+			gate.EndedAt = time.Now().UnixMilli()
+			w.Context[gate.ID] = approvalResult
 		}
 		if w.CurrentStep != "" {
 			w.InterruptBefore = removeString(w.InterruptBefore, w.CurrentStep)
@@ -165,19 +171,24 @@ func (e *Engine) HandleApprovalWithData(workflowID string, approved bool, data m
 	}
 
 	return e.store.Modify(workflowID, func(w *Workflow) {
-		for i := range w.Steps {
-			s := &w.Steps[i]
-			if s.Kind == StepApproval && s.State == StepPending {
-				s.State = StepCompleted
-				s.EndedAt = time.Now().UnixMilli()
-				if data != nil {
-					s.Result = data
-					w.Context[s.ID] = data
-				} else {
-					s.Result = approvalResult
-					w.Context[s.ID] = approvalResult
-				}
-				break
+		// Target selection defers to the authoritative CurrentStep via
+		// BlockingStep — same derivation as HandleApproval/wf_status (#23).
+		// BlockingStep returns nil for an active interrupt_before/
+		// interrupt_after pause point (a non-approval checkpoint — see #23
+		// round 4), so only a real pending approval gate reaches here; the
+		// Kind==StepApproval && State==StepPending guard is kept as a
+		// defensive check. When BlockingStep returns nil, only the
+		// interrupt-list cleanup and State->StateRunning transition below
+		// run, leaving the paused step to execute for real.
+		if gate := w.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
+			gate.State = StepCompleted
+			gate.EndedAt = time.Now().UnixMilli()
+			if data != nil {
+				gate.Result = data
+				w.Context[gate.ID] = data
+			} else {
+				gate.Result = approvalResult
+				w.Context[gate.ID] = approvalResult
 			}
 		}
 		if w.CurrentStep != "" {

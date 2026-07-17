@@ -199,6 +199,60 @@ func (w *Workflow) GetStep(stepID string) *Step {
 	return nil
 }
 
+// BlockingStep returns the pending approval gate the workflow is currently
+// halted on when State==StateWaitingApproval, else nil. It discriminates three
+// cases for a workflow in the waiting-approval state:
+//
+//  1. Primary/authoritative: CurrentStep names a pending approval step — that
+//     is the gate the workflow is actually blocked on; return it. CurrentStep
+//     is written at step-start and preserved across the approval pause, so it
+//     is the authoritative "which gate am I blocked on" signal in this case.
+//
+//  2. Interrupt-pause/no-op: CurrentStep names a NON-approval step that is an
+//     active interrupt_before/interrupt_after pause point (the step an
+//     interrupt checkpoint paused on — see handleInterrupt / the
+//     interrupt_after block in completeStep). There is NO approval gate
+//     pending resolution here at all; the pause is just a checkpoint. Return
+//     nil so HandleApproval only clears the interrupt list and flips state,
+//     touching nothing else. Falling through to the scan here would grab an
+//     UNRELATED downstream approval gate that hasn't even been reached yet and
+//     silently bypass it (see issue #23 round 4).
+//
+//  3. Race-fallback/scan: CurrentStep is empty, dangling, or raced to an
+//     unrelated non-interrupt non-approval sibling under parallel dispatch
+//     (runParallel/DispatchBatch siblings each write CurrentStep inside
+//     store.Modify; last-write-wins can leave it pointing at a non-approval
+//     sibling after the real gate already paused the workflow). Scan the
+//     committed Steps state (race-immune — it reads the step slice, not the
+//     racy CurrentStep field) for the first pending approval step. This also
+//     covers workflows persisted before CurrentStep was reliable.
+func (w *Workflow) BlockingStep() *Step {
+	if w.State != StateWaitingApproval {
+		return nil
+	}
+	if s := w.GetStep(w.CurrentStep); s != nil {
+		if s.Kind == StepApproval && s.State == StepPending {
+			return s
+		}
+		// CurrentStep legitimately names a non-approval interrupt pause
+		// point (interrupt_before/interrupt_after) — nothing to resolve
+		// here, do NOT fall through to the scan (that would incorrectly
+		// grab an unrelated downstream approval gate — see #23 round 4).
+		if slices.Contains(w.InterruptBefore, w.CurrentStep) || slices.Contains(w.InterruptAfter, w.CurrentStep) {
+			return nil
+		}
+	}
+	// Fallback: CurrentStep is empty, dangling, or raced to an unrelated
+	// non-interrupt non-approval sibling under parallel dispatch (see #23
+	// round 3) — scan committed Steps state for the real pending gate.
+	for i := range w.Steps {
+		if w.Steps[i].Kind == StepApproval && w.Steps[i].State == StepPending {
+			return &w.Steps[i]
+		}
+	}
+	return nil
+}
+
 // IsTerminal returns true if the workflow is in a final state.
 func (w *Workflow) IsTerminal() bool {
 	return w.State == StateCompleted || w.State == StateFailed || w.State == StateCancelled
