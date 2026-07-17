@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.17.2](https://github.com/anatolykoptev/go-workflow/compare/v0.17.1...v0.17.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **approval:** route pending_approval + HandleApproval through BlockingStep SSOT ([#28](https://github.com/anatolykoptev/go-workflow/issues/28)) ([d05abb7](https://github.com/anatolykoptev/go-workflow/commit/d05abb79360e473465c6834036fd08b9ce9715a5))
+
 ## [0.17.1](https://github.com/anatolykoptev/go-workflow/compare/v0.17.0...v0.17.1) (2026-07-16)
 
 
