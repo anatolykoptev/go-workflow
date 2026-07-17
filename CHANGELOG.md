@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.19.1](https://github.com/anatolykoptev/go-workflow/compare/v0.19.0...v0.19.1) (2026-07-17)
+
+
+### Documentation
+
+* use "operator" not "human" in [#25](https://github.com/anatolykoptev/go-workflow/issues/25) comments; gofmt fixup ([#36](https://github.com/anatolykoptev/go-workflow/issues/36)) ([30caed4](https://github.com/anatolykoptev/go-workflow/commit/30caed4f4263913299e84b80e3f889657bf09438))
+
 ## [0.19.0](https://github.com/anatolykoptev/go-workflow/compare/v0.18.0...v0.19.0) (2026-07-17)
 
 
