@@ -1,7 +1,6 @@
 package workflow
 
 import (
-
 	"github.com/anatolykoptev/go-kit/ratelimit"
 )
 

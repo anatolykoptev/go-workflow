@@ -10,15 +10,15 @@ import (
 // Schedule defines when a job runs.
 type Schedule struct {
 	Kind    string `json:"kind"`               // "at", "every", "cron"
-	AtMS    *int64 `json:"at_ms,omitempty"`     // for kind="at": one-shot unix ms
-	EveryMS *int64 `json:"every_ms,omitempty"`  // for kind="every": interval ms
-	Expr    string `json:"expr,omitempty"`      // for kind="cron": 5-field expression
-	TZ      string `json:"tz,omitempty"`        // timezone for cron (e.g. "Europe/Moscow")
+	AtMS    *int64 `json:"at_ms,omitempty"`    // for kind="at": one-shot unix ms
+	EveryMS *int64 `json:"every_ms,omitempty"` // for kind="every": interval ms
+	Expr    string `json:"expr,omitempty"`     // for kind="cron": 5-field expression
+	TZ      string `json:"tz,omitempty"`       // timezone for cron (e.g. "Europe/Moscow")
 }
 
 // JobPayload defines what happens when a job fires.
 type JobPayload struct {
-	Kind       string         `json:"kind"`                    // "workflow", "message", or custom
+	Kind       string         `json:"kind"` // "workflow", "message", or custom
 	WorkflowID string         `json:"workflow_id,omitempty"`
 	TemplateID string         `json:"template_id,omitempty"`
 	Message    string         `json:"message,omitempty"`

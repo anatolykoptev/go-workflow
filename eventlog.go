@@ -19,13 +19,13 @@ const (
 type EventType string
 
 const (
-	EventStepStarted      EventType = "step_started"
-	EventStepFinished     EventType = "step_completed"
-	EventStepFailed       EventType = "step_failed"
-	EventStepRetried      EventType = "step_retried"
-	EventWFStarted        EventType = "workflow_started"
-	EventWFCompleted      EventType = "workflow_completed"
-	EventWFFailed         EventType = "workflow_failed"
+	EventStepStarted  EventType = "step_started"
+	EventStepFinished EventType = "step_completed"
+	EventStepFailed   EventType = "step_failed"
+	EventStepRetried  EventType = "step_retried"
+	EventWFStarted    EventType = "workflow_started"
+	EventWFCompleted  EventType = "workflow_completed"
+	EventWFFailed     EventType = "workflow_failed"
 )
 
 // Event is a single entry in the structured event log.

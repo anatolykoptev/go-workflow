@@ -12,7 +12,7 @@ type retryAfterErr struct {
 	delay time.Duration
 }
 
-func (e *retryAfterErr) Error() string          { return fmt.Sprintf("retry after %s", e.delay) }
+func (e *retryAfterErr) Error() string             { return fmt.Sprintf("retry after %s", e.delay) }
 func (e *retryAfterErr) RetryAfter() time.Duration { return e.delay }
 
 // TestCalculateBackoff_AppliesJitter verifies that:

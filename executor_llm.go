@@ -28,7 +28,7 @@ type LLMExecutor struct {
 	metrics    *Metrics
 	streamCB   StreamCallback
 	toolRunner ToolRunner
-	engine     *Engine // back-reference for cost recording (set by NewEngine)
+	engine     *Engine          // back-reference for cost recording (set by NewEngine)
 	breakers   *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 

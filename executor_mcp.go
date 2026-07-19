@@ -22,7 +22,7 @@ type MCPToolRunner struct {
 	sessions map[string]*mcp.ClientSession // lazy-initialized
 	routes   map[string]string             // toolName → serverID
 	mu       sync.RWMutex
-	breakers *breakerRegistry              // nil = disabled (e.g. in unit tests)
+	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
 // NewMCPToolRunner creates a runner for the given MCP servers.

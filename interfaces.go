@@ -4,13 +4,13 @@ import "context"
 
 // Hook event constants.
 const (
-	EventWorkflowStarted       = "workflow_started"
-	EventWorkflowCompleted     = "workflow_completed"
-	EventWorkflowFailed        = "workflow_failed"
-	EventWorkflowCancelled     = "workflow_cancelled"
-	EventWorkflowStepStarted   = "workflow_step_started"
-	EventWorkflowStepCompleted = "workflow_step_completed"
-	EventWorkflowStepFailed    = "workflow_step_failed"
+	EventWorkflowStarted        = "workflow_started"
+	EventWorkflowCompleted      = "workflow_completed"
+	EventWorkflowFailed         = "workflow_failed"
+	EventWorkflowCancelled      = "workflow_cancelled"
+	EventWorkflowStepStarted    = "workflow_step_started"
+	EventWorkflowStepCompleted  = "workflow_step_completed"
+	EventWorkflowStepFailed     = "workflow_step_failed"
 	EventWorkflowApprovalNeeded = "workflow_approval_needed"
 )
 

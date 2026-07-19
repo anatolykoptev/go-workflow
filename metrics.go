@@ -8,34 +8,34 @@ import (
 
 // Metrics tracks workflow execution counters.
 type Metrics struct {
-	WorkflowsCreated   atomic.Int64
-	WorkflowsCompleted atomic.Int64
-	WorkflowsFailed    atomic.Int64
-	WorkflowsCancelled atomic.Int64
-	StepsExecuted      atomic.Int64
-	StepsRetried       atomic.Int64
-	StepsSkipped       atomic.Int64
-	StepsDeadLettered  atomic.Int64
-	ApprovalsPending   atomic.Int64
-	AgentStepsExecuted atomic.Int64
-	AgentStepsFailed   atomic.Int64
-	A2AStepsExecuted   atomic.Int64
-	A2AStepsFailed     atomic.Int64
-	HooksFired         atomic.Int64
-	TriggersEvaluated  atomic.Int64
-	TriggersFired          atomic.Int64
-	SchedulerJobsExecuted  atomic.Int64
-	SchedulerJobsFailed    atomic.Int64
-	LLMTokensInput         atomic.Int64
-	LLMTokensOutput        atomic.Int64
-	ImageRendersSuccess    atomic.Int64
-	ImageRendersFailed     atomic.Int64
-	ImageBytesTotal        atomic.Int64
-	ImageDurationMSTotal   atomic.Int64
-	VisionCallsSuccess     atomic.Int64
-	VisionCallsFailed      atomic.Int64
-	VisionTokensInput      atomic.Int64
-	VisionTokensOutput     atomic.Int64
+	WorkflowsCreated      atomic.Int64
+	WorkflowsCompleted    atomic.Int64
+	WorkflowsFailed       atomic.Int64
+	WorkflowsCancelled    atomic.Int64
+	StepsExecuted         atomic.Int64
+	StepsRetried          atomic.Int64
+	StepsSkipped          atomic.Int64
+	StepsDeadLettered     atomic.Int64
+	ApprovalsPending      atomic.Int64
+	AgentStepsExecuted    atomic.Int64
+	AgentStepsFailed      atomic.Int64
+	A2AStepsExecuted      atomic.Int64
+	A2AStepsFailed        atomic.Int64
+	HooksFired            atomic.Int64
+	TriggersEvaluated     atomic.Int64
+	TriggersFired         atomic.Int64
+	SchedulerJobsExecuted atomic.Int64
+	SchedulerJobsFailed   atomic.Int64
+	LLMTokensInput        atomic.Int64
+	LLMTokensOutput       atomic.Int64
+	ImageRendersSuccess   atomic.Int64
+	ImageRendersFailed    atomic.Int64
+	ImageBytesTotal       atomic.Int64
+	ImageDurationMSTotal  atomic.Int64
+	VisionCallsSuccess    atomic.Int64
+	VisionCallsFailed     atomic.Int64
+	VisionTokensInput     atomic.Int64
+	VisionTokensOutput    atomic.Int64
 	// WorkflowCostUSDTotal stores USD as micro-cents (USD * 1,000,000,
 	// rounded) because atomic.Float64 does not exist. Microcents preserve
 	// sub-cent precision so cheap-model calls (Haiku/Flash) still move
