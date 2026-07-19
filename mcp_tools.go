@@ -70,6 +70,16 @@ type wfStatusOutput struct {
 	Steps           []wfStepSummary `json:"steps"`
 	PendingApproval string          `json:"pending_approval,omitempty"`
 	Error           string          `json:"error,omitempty"`
+	// Resumable is true when a cancelled workflow can be reopened via Reopen
+	// (CurrentStep is a pending approval gate) — the "step failed, artifacts
+	// intact" case that bare State=cancelled hides. Distinguishes a
+	// recoverable cancel from a genuinely terminal failure (issue #296).
+	Resumable bool `json:"resumable,omitempty"`
+	// ArtifactPath surfaces the most recent surviving merged-render artifact
+	// path recorded in a completed approval step's data (Context[stepID]).
+	// Empty when no file path was recorded. Lets an operator/agent
+	// reopen+resume instead of rebuilding from scratch (issue #296).
+	ArtifactPath string `json:"artifact_path,omitempty"`
 }
 
 type wfTemplateInfo struct {
@@ -155,19 +165,37 @@ func registerWFStatus(server *mcp.Server, deps MCPDeps) {
 			if !ok {
 				return errResult(fmt.Sprintf("workflow %q not found", input.WorkflowID))
 			}
-			summaries := make([]wfStepSummary, len(wf.Steps))
-			for i, s := range wf.Steps {
-				summaries[i] = wfStepSummary{ID: s.ID, Kind: s.Kind, State: s.State, Error: s.Error}
-			}
-			// pending_approval is derived from the authoritative CurrentStep via
-			// BlockingStep, not an independent scan — see issue #23. Keeps this
-			// field in sync with HandleApproval/HandleApprovalWithData's target.
-			var pending string
-			if gate := wf.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
-				pending = gate.ID
-			}
-			return textResult(wfStatusOutput{ID: wf.ID, State: wf.State, Steps: summaries, PendingApproval: pending, Error: wf.Error})
+			return textResult(BuildWFStatusOutput(wf))
 		})
+}
+
+// BuildWFStatusOutput derives the wf_status response from a loaded Workflow
+// using only the workflow's own committed state — no engine side-effects,
+// no second state store. Exported so go-wp integration tests can assert on
+// the exact shape registerWFStatus returns without going through the MCP
+// tool plumbing (issue #296).
+func BuildWFStatusOutput(wf *Workflow) wfStatusOutput {
+	summaries := make([]wfStepSummary, len(wf.Steps))
+	for i, s := range wf.Steps {
+		summaries[i] = wfStepSummary{ID: s.ID, Kind: s.Kind, State: s.State, Error: s.Error}
+	}
+	// pending_approval is derived from the authoritative CurrentStep via
+	// BlockingStep, not an independent scan — see issue #23. Keeps this
+	// field in sync with HandleApproval/HandleApprovalWithData's target.
+	var pending string
+	if gate := wf.BlockingStep(); gate != nil && gate.Kind == StepApproval && gate.State == StepPending {
+		pending = gate.ID
+	}
+	resumable, artifactPath := wf.ResumableArtifact()
+	return wfStatusOutput{
+		ID:              wf.ID,
+		State:           wf.State,
+		Steps:           summaries,
+		PendingApproval: pending,
+		Error:           wf.Error,
+		Resumable:       resumable,
+		ArtifactPath:    artifactPath,
+	}
 }
 
 func registerWFApprove(server *mcp.Server, deps MCPDeps) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"maps"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -256,6 +257,111 @@ func (w *Workflow) BlockingStep() *Step {
 // IsTerminal returns true if the workflow is in a final state.
 func (w *Workflow) IsTerminal() bool {
 	return w.State == StateCompleted || w.State == StateFailed || w.State == StateCancelled
+}
+
+// ResumableArtifact reports whether a cancelled workflow is resumable via
+// Reopen (CurrentStep is a pending approval gate — the same condition
+// Reopen checks before transitioning back to StateWaitingApproval), and
+// when it is, surfaces the most recent surviving artifact path recorded
+// in a completed approval step's data.
+//
+// This is the status-side counterpart to Reopen: Reopen ACTS on the
+// CurrentStep/pending-approval condition, ResumableArtifact REPORTS it so
+// wf_status can distinguish a genuinely terminal failure (StateFailed
+// from a dead-lettered step — nothing to reopen into) from a recoverable
+// "step failed / BLOCKed, artifacts intact" cancel — see issue #296.
+//
+// Returns (false, "") when:
+//   - the workflow is not cancelled (running, waiting, paused, completed,
+//     or failed — only StateCancelled is reopen-eligible),
+//   - CurrentStep is empty or points at a non-approval / non-pending step
+//     (Reopen would refuse; surfacing resumable=true would over-promise),
+//   - or no completed approval step recorded a file path in its data.
+//
+// The artifact-path scan walks Steps in REVERSE order (most recent
+// completed approval first) and inspects Context[stepID] — the exact
+// store HandleApprovalWithData writes the approver's data payload to.
+// It looks for a string value that looks like a filesystem artifact path
+// (currently: a /tmp/ prefix, matching the go-wp wp_temp /tmp/go-wp/{project}/
+// convention where the merged render lives). The key name in the data map
+// is operator-controlled (templates say "Pass file path as data" without
+// pinning a key), so the scan is key-agnostic — any string field holding a
+// /tmp/ path qualifies. No filesystem existence check is performed: the
+// path is what was recorded at approval time, and statting would couple
+// this pure read to the filesystem; the caller can stat if it cares.
+func (w *Workflow) ResumableArtifact() (resumable bool, artifactPath string) {
+	if w.State != StateCancelled || w.CurrentStep == "" {
+		return false, ""
+	}
+	step := w.GetStep(w.CurrentStep)
+	if step == nil || step.Kind != StepApproval || step.State != StepPending {
+		return false, ""
+	}
+	// Walk ALL completed steps most-recent-first for a surviving artifact
+	// path. Not approval-only: the merged render is usually produced by a
+	// tool/executor step that records its output path in Context[stepID], so
+	// restricting the scan to approval steps would silently miss it (PR #42
+	// review — the written-but-not-wired risk). Returns (true, "") when
+	// resumable but no path was recorded — the operator can still
+	// reopen+re-approve, they just don't get a salvageable-file hint.
+	for i := len(w.Steps) - 1; i >= 0; i-- {
+		s := w.Steps[i]
+		if s.State != StepCompleted {
+			continue
+		}
+		if path, ok := extractArtifactPath(w.Context[s.ID]); ok {
+			return true, path
+		}
+	}
+	return true, ""
+}
+
+// extractArtifactPath inspects a step's recorded Context payload for a string
+// that looks like a filesystem artifact path. The data shape is
+// operator-controlled (templates say "pass the file path as data" without
+// pinning a key), so the scan is key-agnostic and recurses one level into a
+// nested map (e.g. {"result":{"render_file":…}}). When several candidates
+// exist within one payload the smallest (sorted) is returned for a
+// DETERMINISTIC result — Go map iteration order is otherwise random (PR #42
+// review). Returns ("", false) when no artifact-like path is found.
+func extractArtifactPath(v any) (string, bool) {
+	var candidates []string
+	var scan func(any, int)
+	scan = func(x any, depth int) {
+		switch val := x.(type) {
+		case string:
+			if isArtifactPath(val) {
+				candidates = append(candidates, val)
+			}
+		case map[string]any:
+			if depth > 1 {
+				return
+			}
+			for _, field := range val {
+				scan(field, depth+1)
+			}
+		}
+	}
+	scan(v, 0)
+	if len(candidates) == 0 {
+		return "", false
+	}
+	slices.Sort(candidates)
+	return candidates[0], true
+}
+
+// isArtifactPath reports whether s looks like a filesystem artifact path worth
+// surfacing as a surviving artifact location. Matches an absolute path under
+// the OS temp dir (os.TempDir(), e.g. /var/folders/… on macOS) OR the literal
+// /tmp/ prefix (the go-wp wp_temp /tmp/go-wp/{project}/ convention holds even
+// when $TMPDIR differs). Narrow on purpose: a false positive would point the
+// operator at a non-artifact string and undermine the signal.
+func isArtifactPath(s string) bool {
+	if strings.HasPrefix(s, "/tmp/") {
+		return true
+	}
+	tmp := os.TempDir()
+	return tmp != "" && tmp != "/" && strings.HasPrefix(s, strings.TrimRight(tmp, "/")+"/")
 }
 
 // AddCost merges a single step's cost into the workflow aggregate, creating the
