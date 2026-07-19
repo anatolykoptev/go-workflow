@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"maps"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -296,14 +297,16 @@ func (w *Workflow) ResumableArtifact() (resumable bool, artifactPath string) {
 	if step == nil || step.Kind != StepApproval || step.State != StepPending {
 		return false, ""
 	}
-	// Walk completed approval steps most-recent-first; the latest compose/
-	// merge approval holds the surviving merged-render path. Returns
-	// (true, "") when resumable but no file path was recorded — the
-	// operator can still reopen+re-approve, they just don't get a
-	// salvageable-file hint.
+	// Walk ALL completed steps most-recent-first for a surviving artifact
+	// path. Not approval-only: the merged render is usually produced by a
+	// tool/executor step that records its output path in Context[stepID], so
+	// restricting the scan to approval steps would silently miss it (PR #42
+	// review — the written-but-not-wired risk). Returns (true, "") when
+	// resumable but no path was recorded — the operator can still
+	// reopen+re-approve, they just don't get a salvageable-file hint.
 	for i := len(w.Steps) - 1; i >= 0; i-- {
 		s := w.Steps[i]
-		if s.Kind != StepApproval || s.State != StepCompleted {
+		if s.State != StepCompleted {
 			continue
 		}
 		if path, ok := extractArtifactPath(w.Context[s.ID]); ok {
@@ -313,35 +316,52 @@ func (w *Workflow) ResumableArtifact() (resumable bool, artifactPath string) {
 	return true, ""
 }
 
-// extractArtifactPath inspects an approval step's recorded data payload
-// (Context[stepID]) for a string value that looks like a filesystem
-// artifact path. The data shape is operator-controlled (templates say
-// "Pass file path as data" without pinning a key), so the scan is
-// key-agnostic over map fields. Returns ("", false) when no artifact-like
-// path is found.
+// extractArtifactPath inspects a step's recorded Context payload for a string
+// that looks like a filesystem artifact path. The data shape is
+// operator-controlled (templates say "pass the file path as data" without
+// pinning a key), so the scan is key-agnostic and recurses one level into a
+// nested map (e.g. {"result":{"render_file":…}}). When several candidates
+// exist within one payload the smallest (sorted) is returned for a
+// DETERMINISTIC result — Go map iteration order is otherwise random (PR #42
+// review). Returns ("", false) when no artifact-like path is found.
 func extractArtifactPath(v any) (string, bool) {
-	switch val := v.(type) {
-	case map[string]any:
-		for _, field := range val {
-			if s, ok := field.(string); ok && isArtifactPath(s) {
-				return s, true
+	var candidates []string
+	var scan func(any, int)
+	scan = func(x any, depth int) {
+		switch val := x.(type) {
+		case string:
+			if isArtifactPath(val) {
+				candidates = append(candidates, val)
+			}
+		case map[string]any:
+			if depth > 1 {
+				return
+			}
+			for _, field := range val {
+				scan(field, depth+1)
 			}
 		}
-	case string:
-		if isArtifactPath(val) {
-			return val, true
-		}
 	}
-	return "", false
+	scan(v, 0)
+	if len(candidates) == 0 {
+		return "", false
+	}
+	slices.Sort(candidates)
+	return candidates[0], true
 }
 
-// isArtifactPath reports whether s looks like a filesystem artifact path
-// worth surfacing as a surviving merged-render location. Currently
-// matches the go-wp wp_temp /tmp/go-wp/{project}/ convention where the
-// merged render JSONL lives. Narrow on purpose: a false positive would
-// point the operator at a non-artifact string and undermine the signal.
+// isArtifactPath reports whether s looks like a filesystem artifact path worth
+// surfacing as a surviving artifact location. Matches an absolute path under
+// the OS temp dir (os.TempDir(), e.g. /var/folders/… on macOS) OR the literal
+// /tmp/ prefix (the go-wp wp_temp /tmp/go-wp/{project}/ convention holds even
+// when $TMPDIR differs). Narrow on purpose: a false positive would point the
+// operator at a non-artifact string and undermine the signal.
 func isArtifactPath(s string) bool {
-	return strings.HasPrefix(s, "/tmp/")
+	if strings.HasPrefix(s, "/tmp/") {
+		return true
+	}
+	tmp := os.TempDir()
+	return tmp != "" && tmp != "/" && strings.HasPrefix(s, strings.TrimRight(tmp, "/")+"/")
 }
 
 // AddCost merges a single step's cost into the workflow aggregate, creating the

@@ -103,3 +103,61 @@ func TestBuildWFStatusOutput_SurfacesResumable(t *testing.T) {
 		t.Errorf("ArtifactPath = %q, want the surviving merged-render path", out.ArtifactPath)
 	}
 }
+
+// TestResumableArtifact_ToolStepAndNestedAndDeterminism covers the PR #42
+// review findings: the artifact path is usually recorded by a TOOL step (not
+// the approval gate), may be nested one level, and a payload with multiple
+// candidates must return a deterministic result.
+func TestResumableArtifact_ToolStepAndNestedAndDeterminism(t *testing.T) {
+	base := func(ctx map[string]any) *Workflow {
+		return &Workflow{
+			State:       StateCancelled,
+			CurrentStep: "go-live",
+			Steps: []Step{
+				{ID: "merge", Kind: StepTool, State: StepCompleted},
+				{ID: "go-live", Kind: StepApproval, State: StepPending},
+			},
+			Context: ctx,
+		}
+	}
+	tests := []struct {
+		name string
+		ctx  map[string]any
+		want string
+	}{
+		{
+			name: "artifact recorded on a TOOL step (not approval) is found",
+			ctx:  map[string]any{"merge": map[string]any{"render_file": "/tmp/go-wp/piter/merged-1.jsonl"}},
+			want: "/tmp/go-wp/piter/merged-1.jsonl",
+		},
+		{
+			name: "nested one level deep is found",
+			ctx:  map[string]any{"merge": map[string]any{"result": map[string]any{"render_file": "/tmp/go-wp/piter/merged-2.jsonl"}}},
+			want: "/tmp/go-wp/piter/merged-2.jsonl",
+		},
+		{
+			name: "bare string payload is found",
+			ctx:  map[string]any{"merge": "/tmp/go-wp/piter/merged-3.jsonl"},
+			want: "/tmp/go-wp/piter/merged-3.jsonl",
+		},
+		{
+			name: "multiple candidates -> smallest (deterministic), not random map order",
+			ctx:  map[string]any{"merge": map[string]any{"a": "/tmp/z.jsonl", "b": "/tmp/a.jsonl"}},
+			want: "/tmp/a.jsonl",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Run repeatedly: a nondeterministic map scan would flake here.
+			for i := 0; i < 20; i++ {
+				resumable, path := base(tt.ctx).ResumableArtifact()
+				if !resumable {
+					t.Fatal("resumable = false, want true")
+				}
+				if path != tt.want {
+					t.Fatalf("artifactPath = %q, want %q", path, tt.want)
+				}
+			}
+		})
+	}
+}
