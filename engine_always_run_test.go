@@ -87,7 +87,7 @@ func TestAlwaysRun_DepNeverScheduledStaysPending(t *testing.T) {
 	engine, store := newTestEngine(t, runner)
 
 	wf := NewWorkflow("wf-orphan", "AlwaysRunOrphan", "telegram:1", []Step{
-		{ID: "a", Kind: StepTool, Config: map[string]any{"tool": "bad"}, State: StepPending},     // fails
+		{ID: "a", Kind: StepTool, Config: map[string]any{"tool": "bad"}, State: StepPending},                            // fails
 		{ID: "b", Kind: StepTool, Config: map[string]any{"tool": "good"}, DependsOn: []string{"a"}, State: StepPending}, // never runs because a failed
 		// cleanup depends on b — b never ran, so cleanup must NOT run either
 		{ID: "cleanup", Kind: StepTool, Config: map[string]any{"tool": "good"}, DependsOn: []string{"b"}, AlwaysRun: true, State: StepPending},

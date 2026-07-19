@@ -7,33 +7,35 @@ import (
 
 	workflow "github.com/anatolykoptev/go-workflow"
 	"github.com/anatolykoptev/go-workflow/store"
-	"github.com/jmoiron/sqlx"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func cleanQueue(t *testing.T, dsn string) {
-	t.Helper()
-
-	db, err := sqlx.Open("pgx", dsn)
-	if err != nil {
-		t.Fatal("open cleanup db:", err)
-	}
-	defer db.Close()
-
-	db.MustExec("DELETE FROM step_queue")
-}
-
 func TestDistributed_FullFlow(t *testing.T) {
-	dsn := testPgDSN(t) // skips if Postgres unavailable
+	dsn := newTestDB(t) // skips if Postgres unavailable; isolated per-test DB
 
-	// Ensure migrations run + clean up leftover queue items.
+	// Ensure migrations run.
 	pgStore, err := store.NewPostgresStore(dsn)
 	if err != nil {
 		t.Skip("no test db:", err)
 	}
+	t.Cleanup(func() { pgStore.Close() })
 
-	cleanQueue(t, dsn)
+	// Two sequential steps: s1 -> s2. Steps MUST be initialized to StepPending
+	// (NewWorkflow does not normalize step states); findAllRunnable skips any
+	// step whose State != StepPending, so Advance would dispatch nothing.
+	wfID := "dist-test-" + uniqueSuffix()
+	wf := workflow.NewWorkflow(wfID, "distributed-test", "test", []workflow.Step{
+		{ID: "s1", Kind: workflow.StepNoop, State: workflow.StepPending},
+		{ID: "s2", Kind: workflow.StepNoop, State: workflow.StepPending, DependsOn: []string{"s1"}},
+	})
+
+	if err := pgStore.Save(wf); err != nil {
+		t.Fatalf("save workflow: %v", err)
+	}
+	// Scoped cleanup: deleting the workflow cascades to its step_queue rows.
+	// Each test runs against its own isolated database (see testdb_test.go).
+	t.Cleanup(func() { _ = pgStore.Delete(wfID) })
 
 	// Separate queue connections for dispatcher and worker
 	// because WorkerNode.Stop() closes its queue.
@@ -55,17 +57,6 @@ func TestDistributed_FullFlow(t *testing.T) {
 	engine := workflow.NewEngine(pgStore,
 		workflow.WithDispatcher(pgDispatcher),
 	)
-
-	// Two sequential steps: s1 -> s2.
-	wfID := "dist-test-" + uniqueSuffix()
-	wf := workflow.NewWorkflow(wfID, "distributed-test", "test", []workflow.Step{
-		{ID: "s1", Kind: workflow.StepNoop},
-		{ID: "s2", Kind: workflow.StepNoop, DependsOn: []string{"s1"}},
-	})
-
-	if err := pgStore.Save(wf); err != nil {
-		t.Fatalf("save workflow: %v", err)
-	}
 
 	// Transition workflow to running state.
 	if err := pgStore.Modify(wfID, func(w *workflow.Workflow) {

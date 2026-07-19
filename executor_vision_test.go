@@ -11,7 +11,7 @@ import (
 )
 
 // fakeLLMProvider is an in-memory LLMProvider for vision tests. When
-	// `vision` is true it advertises VisionCapable+SupportsVision; the
+// `vision` is true it advertises VisionCapable+SupportsVision; the
 // non-capable variant omits the method entirely (separate type).
 type fakeLLMProvider struct {
 	mu           sync.Mutex

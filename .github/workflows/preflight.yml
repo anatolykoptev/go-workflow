@@ -1,0 +1,66 @@
+name: preflight
+
+# Pre-merge gate for go-workflow (PUBLIC repo → free GitHub-hosted arm64,
+# ubuntu-24.04-arm = prod-box parity). gofmt + vet + build + race-test via
+# `make preflight`, plus a golangci ratchet on new issues only. The
+# Postgres-backed store/dispatcher tests run FOR REAL here (never skipped) —
+# a stock postgres service + both DSN env names the codebase reads.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Both env names the codebase reads for the test DSN (store/* use
+      # WORKFLOW_TEST_POSTGRES_DSN, dispatcher/step_queue use
+      # GO_WORKFLOW_TEST_DSN) — set both so every gated test RUNS, none skips.
+      # The store applies its own embedded migrations, so a fresh DB is enough.
+      GO_WORKFLOW_TEST_DSN: postgres://postgres:postgres@127.0.0.1:5432/workflow_test?sslmode=disable
+      WORKFLOW_TEST_POSTGRES_DSN: postgres://postgres:postgres@127.0.0.1:5432/workflow_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history so golangci --new-from-merge-base=origin/main can
+          # compute the base; a shallow clone makes the ratchet lint EVERYTHING
+          # (incl. the repo's pre-existing gocognit backlog) and red the gate.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: preflight (gofmt + vet + build + race-test)
+        run: make preflight
+
+      - name: golangci-lint (new issues vs main)
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+          args: --new-from-merge-base=origin/main --timeout=5m

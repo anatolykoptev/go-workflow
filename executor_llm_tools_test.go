@@ -273,8 +273,8 @@ func TestLLMExecutor_ToolLoop_BudgetExceeded(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if n == 1 {
 			tc := []map[string]any{{
-				"id":   "call_1",
-				"type": "function",
+				"id":       "call_1",
+				"type":     "function",
 				"function": map[string]string{"name": "echo", "arguments": `{}`},
 			}}
 			_, _ = w.Write(toolCallJSON(tc, 100000, 100000))

@@ -13,14 +13,14 @@ import (
 // --- mock queue for hard red tests ---
 
 type hardQueue struct {
-	mu        sync.Mutex
-	items     []*QueueItem
-	nextID    int64
-	dequeueFn func() (*QueueItem, bool)       // override dequeue behavior
-	failFn    func(int64, string) error        // override fail behavior
+	mu         sync.Mutex
+	items      []*QueueItem
+	nextID     int64
+	dequeueFn  func() (*QueueItem, bool)         // override dequeue behavior
+	failFn     func(int64, string) error         // override fail behavior
 	completeFn func(int64, []byte, string) error // override complete behavior
-	hbCount   atomic.Int32
-	closed    atomic.Bool
+	hbCount    atomic.Int32
+	closed     atomic.Bool
 }
 
 func (q *hardQueue) Enqueue(item QueueItem) error {

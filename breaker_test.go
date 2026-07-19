@@ -94,7 +94,6 @@ func TestBreaker_RecoversAfterHalfOpen(t *testing.T) {
 	}
 }
 
-
 // TestBreaker_CircuitOpenError_Message checks the error message format.
 func TestBreaker_CircuitOpenError_Message(t *testing.T) {
 	err := &circuitOpenError{endpoint: "my-service"}

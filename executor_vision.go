@@ -27,17 +27,17 @@ import (
 // parsed=nil (conservative — schema mismatch is logged, not fatal).
 // MIME type constants for image content.
 const (
-	mimePNG    = "image/png"
-	mimeJPEG   = "image/jpeg"
-	mimeWebP   = "image/webp"
-	mimeGIF    = "image/gif"
-	mimeOctet  = "application/octet-stream"
+	mimePNG   = "image/png"
+	mimeJPEG  = "image/jpeg"
+	mimeWebP  = "image/webp"
+	mimeGIF   = "image/gif"
+	mimeOctet = "application/octet-stream"
 )
 
 type VisionExecutor struct {
 	provider LLMProvider
 	metrics  *Metrics
-	engine   *Engine         // back-reference for cost recording (set by NewEngine)
+	engine   *Engine          // back-reference for cost recording (set by NewEngine)
 	breakers *breakerRegistry // nil = disabled (e.g. in unit tests)
 }
 
