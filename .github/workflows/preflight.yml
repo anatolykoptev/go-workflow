@@ -45,6 +45,11 @@ jobs:
       WORKFLOW_TEST_POSTGRES_DSN: postgres://postgres:postgres@127.0.0.1:5432/workflow_test?sslmode=disable
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history so golangci --new-from-merge-base=origin/main can
+          # compute the base; a shallow clone makes the ratchet lint EVERYTHING
+          # (incl. the repo's pre-existing gocognit backlog) and red the gate.
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
