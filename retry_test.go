@@ -37,9 +37,13 @@ func TestExponentialBackoff(t *testing.T) {
 		t.Errorf("retries = %d, want 3", s.Retries)
 	}
 
-	// Delays: 10ms (mult^0=1x), 20ms (mult^1=2x), 40ms (mult^2=4x) = 70ms minimum
-	if elapsed < 60*time.Millisecond {
-		t.Errorf("elapsed = %v, want >= 60ms (exponential backoff)", elapsed)
+	// Delays: 10ms (mult^0=1x), 20ms (mult^1=2x), 40ms (mult^2=4x) = 70ms nominal.
+	// The terminal error can return a few ms before the final sleep fully
+	// elapses (observed floor ~59ms), so assert 45ms — still comfortably above
+	// the 30ms a FIXED 10ms delay would produce, i.e. proof the backoff is
+	// exponential, with margin so the wall-clock assertion does not flake.
+	if elapsed < 45*time.Millisecond {
+		t.Errorf("elapsed = %v, want >= 45ms (exponential backoff, not fixed 30ms)", elapsed)
 	}
 }
 
