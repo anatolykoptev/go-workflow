@@ -65,12 +65,19 @@ func testPgDSN(t *testing.T) string {
 		t.Skip("postgres unavailable:", err)
 	}
 	db.Close()
-
+	// Serialize DB-backed tests across the `store` and `workflow` test binaries
+	// (they run in parallel by default and share one database). See dblock_test.go.
+	lockDB(t, dsn)
 	return dsn
 }
 
-// setupDispatcher creates a PostgresDispatcher and cleans the step_queue table.
-func setupDispatcher(t *testing.T) (*workflow.PostgresDispatcher, *store.StepQueue) {
+// setupDispatcher creates a PostgresDispatcher and the backing PostgresBackend
+// (so callers can save the parent workflow required by the
+// step_queue→workflows FK). Cleanup is scoped per Dispatch (see
+// mustSaveParentWorkflow): no global DELETE is issued here, which would race
+// with the store package's DB tests running in a parallel test binary against
+// the same database.
+func setupDispatcher(t *testing.T) (*workflow.PostgresDispatcher, *store.StepQueue, *store.PostgresBackend) {
 	t.Helper()
 
 	dsn := testPgDSN(t)
@@ -81,14 +88,6 @@ func setupDispatcher(t *testing.T) (*workflow.PostgresDispatcher, *store.StepQue
 		t.Fatal("setup postgres backend:", err)
 	}
 	t.Cleanup(func() { backend.Close() })
-
-	// Clean the queue table before test.
-	db, err := sqlx.Open("pgx", dsn)
-	if err != nil {
-		t.Fatal("open cleanup db:", err)
-	}
-	db.MustExec("DELETE FROM step_queue")
-	db.Close()
 
 	// Create queue and limiter for the dispatcher.
 	q, err := store.NewStepQueue(dsn)
@@ -112,12 +111,32 @@ func setupDispatcher(t *testing.T) (*workflow.PostgresDispatcher, *store.StepQue
 	}
 	t.Cleanup(func() { verifyQ.Close() })
 
-	return disp, verifyQ
+	return disp, verifyQ, backend
+}
+
+// mustSaveParentWorkflow inserts the parent workflow row required by the
+// step_queue_workflow_id_fkey foreign key before a Dispatch enqueues steps for
+// it. Idempotent upsert (ON CONFLICT). Stale rows for wfID from a previous
+// crashed run are removed first (scoped — never a global DELETE that would
+// race with concurrent DB tests in the store package), and a t.Cleanup
+// removes this test's rows after it finishes.
+func mustSaveParentWorkflow(t *testing.T, backend *store.PostgresBackend, wfID string) {
+	t.Helper()
+	if err := backend.Delete(wfID); err != nil {
+		t.Fatalf("pre-clean workflow %s: %v", wfID, err)
+	}
+	wf := workflow.NewWorkflow(wfID, "dispatcher_test", "test", nil)
+	if err := backend.Save(wf); err != nil {
+		t.Fatalf("save parent workflow %s: %v", wfID, err)
+	}
+	t.Cleanup(func() { _ = backend.Delete(wfID) })
 }
 
 func TestPostgresDispatcher_Dispatch(t *testing.T) {
-	disp, q := setupDispatcher(t)
+	disp, q, backend := setupDispatcher(t)
 	ctx := context.Background()
+
+	mustSaveParentWorkflow(t, backend, "wf-dispatch-1")
 
 	if err := disp.Dispatch(ctx, "wf-dispatch-1", "step-a", workflow.StepTool); err != nil {
 		t.Fatalf("Dispatch: %v", err)
@@ -142,8 +161,10 @@ func TestPostgresDispatcher_Dispatch(t *testing.T) {
 }
 
 func TestPostgresDispatcher_DispatchBatch(t *testing.T) {
-	disp, q := setupDispatcher(t)
+	disp, q, backend := setupDispatcher(t)
 	ctx := context.Background()
+
+	mustSaveParentWorkflow(t, backend, "wf-dispatch-batch")
 
 	stepIDs := []string{"step-b1", "step-b2", "step-b3"}
 	kinds := []workflow.StepKind{workflow.StepTool, workflow.StepLLM, workflow.StepAgent}

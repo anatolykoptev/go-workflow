@@ -17,10 +17,17 @@ func (e *Engine) startWorkflow(workflowID string) (*Workflow, error) {
 		return nil, fmt.Errorf("workflow %s is %s, expected pending", workflowID, w.State)
 	}
 
-	// Idempotency check
+	// Idempotency check: refuse to start if a DIFFERENT non-terminal workflow
+	// already holds the same key. FindByIdempotencyKey returns only the first
+	// match, which may be this workflow itself (non-deterministic map/SQL
+	// order) — so scan all workflows and look for a duplicate with a different
+	// ID. See TestIdempotencyKey.
 	if w.IdempotencyKey != "" {
-		if existing := e.store.FindByIdempotencyKey(w.IdempotencyKey); existing != nil && existing.ID != workflowID {
-			return nil, fmt.Errorf("duplicate idempotency key %q: active workflow %s", w.IdempotencyKey, existing.ID)
+		for _, existing := range e.store.List("") {
+			if existing.IdempotencyKey == w.IdempotencyKey &&
+				existing.ID != workflowID && !existing.IsTerminal() {
+				return nil, fmt.Errorf("duplicate idempotency key %q: active workflow %s", w.IdempotencyKey, existing.ID)
+			}
 		}
 	}
 

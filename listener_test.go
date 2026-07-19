@@ -63,6 +63,10 @@ func testPgDSN(t *testing.T) string {
 	}
 	conn.Close(ctx)
 
+	// Serialize DB-backed tests across packages — see dblock_internal_test.go.
+	// For listener tests this also prevents stray pg_notify('step_done')
+	// broadcasts from the store package's StepQueue.Complete arriving mid-test.
+	lockDB(t, dsn)
 	return dsn
 }
 

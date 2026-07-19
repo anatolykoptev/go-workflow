@@ -61,11 +61,19 @@ func testDSN(t *testing.T) string {
 		t.Skip("postgres unavailable:", err)
 	}
 	db.Close()
+	// Serialize DB-backed tests across the `store` and `workflow` test binaries
+	// (they run in parallel by default and share one database). See dblock_test.go.
+	lockDB(t, dsn)
 	return dsn
 }
 
-// setupQueue creates a StepQueue and cleans the table before each test.
-func setupQueue(t *testing.T) *store.StepQueue {
+// setupQueue creates a StepQueue and the backing PostgresBackend (so callers
+// can save the parent workflow required by the step_queue→workflows FK).
+//
+// Cleanup is scoped per Enqueue (see mustEnqueue): no global DELETE is issued
+// here, which would race with the workflow package's DB tests running in a
+// parallel test binary against the same database.
+func setupQueue(t *testing.T) (*store.StepQueue, *store.PostgresBackend) {
 	t.Helper()
 	dsn := testDSN(t)
 
@@ -82,12 +90,7 @@ func setupQueue(t *testing.T) *store.StepQueue {
 	}
 	t.Cleanup(func() { q.Close() })
 
-	// Clean up queue table before test.
-	db, _ := sqlx.Open("pgx", dsn)
-	db.MustExec("DELETE FROM step_queue")
-	db.Close()
-
-	return q
+	return q, backend
 }
 
 func makeItem(wfID, stepID, kind string, priority int) workflow.QueueItem {
@@ -99,13 +102,49 @@ func makeItem(wfID, stepID, kind string, priority int) workflow.QueueItem {
 	}
 }
 
-func TestStepQueue_EnqueueAndDequeue(t *testing.T) {
-	q := setupQueue(t)
+// mustEnqueue saves a minimal parent workflow for item.WorkflowID (required by
+// the step_queue_workflow_id_fkey foreign key — a step must belong to a real
+// workflow) and then enqueues the item. The parent save is an idempotent
+// upsert (ON CONFLICT), so repeated calls for the same workflow are safe.
+//
+// Stale rows for item.WorkflowID from a previous crashed run are removed
+// first (scoped — never a global DELETE that would race with concurrent DB
+// tests in the workflow package), and a t.Cleanup removes this test's rows
+// after it finishes.
+func mustEnqueue(t *testing.T, q *store.StepQueue, backend *store.PostgresBackend, item workflow.QueueItem) {
+	t.Helper()
 
-	item := makeItem("wf-1", "step-a", "tool", 0)
+	// Scoped cleanup of any stale rows for this workflow (survivors of a
+	// previous crashed run). step_queue rows cascade-delete with the parent.
+	cleanupWorkflow(t, backend, item.WorkflowID)
+
+	// Insert the parent workflow required by the FK.
+	wf := workflow.NewWorkflow(item.WorkflowID, "step_queue_test", "test", nil)
+	if err := backend.Save(wf); err != nil {
+		t.Fatalf("save parent workflow %s: %v", item.WorkflowID, err)
+	}
+
 	if err := q.Enqueue(item); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
+}
+
+// cleanupWorkflow removes the workflow row (and its cascaded step_queue rows)
+// for the given id both now and at test end. Scoped to one id so concurrent DB
+// tests in other packages sharing the same database do not race.
+func cleanupWorkflow(t *testing.T, backend *store.PostgresBackend, wfID string) {
+	t.Helper()
+	if err := backend.Delete(wfID); err != nil {
+		t.Fatalf("pre-clean workflow %s: %v", wfID, err)
+	}
+	t.Cleanup(func() { _ = backend.Delete(wfID) })
+}
+
+func TestStepQueue_EnqueueAndDequeue(t *testing.T) {
+	q, backend := setupQueue(t)
+
+	item := makeItem("wf-1", "step-a", "tool", 0)
+	mustEnqueue(t, q, backend, item)
 
 	got, ok := q.Dequeue("worker-1", []string{"tool"})
 	if !ok {
@@ -135,11 +174,9 @@ func TestStepQueue_EnqueueAndDequeue(t *testing.T) {
 }
 
 func TestStepQueue_Complete(t *testing.T) {
-	q := setupQueue(t)
+	q, backend := setupQueue(t)
 
-	if err := q.Enqueue(makeItem("wf-2", "step-b", "llm", 0)); err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
+	mustEnqueue(t, q, backend, makeItem("wf-2", "step-b", "llm", 0))
 
 	got, ok := q.Dequeue("worker-1", []string{"llm"})
 	if !ok {
@@ -153,11 +190,9 @@ func TestStepQueue_Complete(t *testing.T) {
 }
 
 func TestStepQueue_Fail(t *testing.T) {
-	q := setupQueue(t)
+	q, backend := setupQueue(t)
 
-	if err := q.Enqueue(makeItem("wf-3", "step-c", "tool", 0)); err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
+	mustEnqueue(t, q, backend, makeItem("wf-3", "step-c", "tool", 0))
 
 	got, ok := q.Dequeue("worker-1", []string{"tool"})
 	if !ok {
@@ -170,11 +205,9 @@ func TestStepQueue_Fail(t *testing.T) {
 }
 
 func TestStepQueue_Heartbeat(t *testing.T) {
-	q := setupQueue(t)
+	q, backend := setupQueue(t)
 
-	if err := q.Enqueue(makeItem("wf-4", "step-d", "tool", 0)); err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
+	mustEnqueue(t, q, backend, makeItem("wf-4", "step-d", "tool", 0))
 
 	got, ok := q.Dequeue("worker-1", []string{"tool"})
 	if !ok {
@@ -187,11 +220,9 @@ func TestStepQueue_Heartbeat(t *testing.T) {
 }
 
 func TestStepQueue_ReapStale(t *testing.T) {
-	q := setupQueue(t)
+	q, backend := setupQueue(t)
 
-	if err := q.Enqueue(makeItem("wf-5", "step-e", "tool", 0)); err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
+	mustEnqueue(t, q, backend, makeItem("wf-5", "step-e", "tool", 0))
 
 	got, ok := q.Dequeue("worker-1", []string{"tool"})
 	if !ok {

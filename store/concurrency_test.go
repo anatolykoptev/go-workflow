@@ -14,6 +14,8 @@ func newTestLimiter(t *testing.T) *store.ConcurrencyLimiter {
 	if dsn == "" {
 		t.Skip("WORKFLOW_TEST_POSTGRES_DSN not set")
 	}
+	// Serialize DB-backed tests across packages — see dblock_test.go.
+	lockDB(t, dsn)
 
 	cl, err := store.NewConcurrencyLimiter(dsn)
 	if err != nil {
