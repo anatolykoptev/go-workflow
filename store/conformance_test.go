@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -273,17 +272,14 @@ func TestSQLiteBackend_Conformance(t *testing.T) {
 }
 
 func TestPostgresBackend_Conformance(t *testing.T) {
-	dsn := os.Getenv("WORKFLOW_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("WORKFLOW_TEST_POSTGRES_DSN not set")
-	}
+	// One isolated DB for the whole conformance test, shared across its own
+	// sequential subtests (they do not run in parallel). CleanAll before each
+	// subtest gives a clean slate. No advisory lock — different test DBs never
+	// contend. See testdb_test.go.
+	dsn := newTestDB(t)
 
 	runConformanceTests(t, "PostgresBackend", func(t *testing.T) *workflow.WorkflowStore {
 		t.Helper()
-		// Serialize DB-backed tests across packages — see dblock_test.go.
-		// Locked per subtest so CleanAll (global DELETE FROM workflows) cannot
-		// race the workflow package's enqueues/loads against the same DB.
-		lockDB(t, dsn)
 		backend, err := store.NewPostgresBackend(dsn)
 		if err != nil {
 			t.Fatal(err)

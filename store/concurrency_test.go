@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/anatolykoptev/go-workflow/store"
@@ -9,13 +8,8 @@ import (
 
 func newTestLimiter(t *testing.T) *store.ConcurrencyLimiter {
 	t.Helper()
-
-	dsn := os.Getenv("WORKFLOW_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("WORKFLOW_TEST_POSTGRES_DSN not set")
-	}
-	// Serialize DB-backed tests across packages — see dblock_test.go.
-	lockDB(t, dsn)
+	// One isolated DB per top-level test. See testdb_test.go.
+	dsn := newTestDB(t)
 
 	cl, err := store.NewConcurrencyLimiter(dsn)
 	if err != nil {

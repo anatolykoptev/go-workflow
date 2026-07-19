@@ -12,7 +12,7 @@ import (
 )
 
 func TestDistributed_FullFlow(t *testing.T) {
-	dsn := testPgDSN(t) // skips if Postgres unavailable
+	dsn := newTestDB(t) // skips if Postgres unavailable; isolated per-test DB
 
 	// Ensure migrations run.
 	pgStore, err := store.NewPostgresStore(dsn)
@@ -33,9 +33,8 @@ func TestDistributed_FullFlow(t *testing.T) {
 	if err := pgStore.Save(wf); err != nil {
 		t.Fatalf("save workflow: %v", err)
 	}
-	// Scoped cleanup: never a global DELETE that would race with the store
-	// package's DB tests running in a parallel test binary against the same
-	// database. Deleting the workflow cascades to its step_queue rows.
+	// Scoped cleanup: deleting the workflow cascades to its step_queue rows.
+	// Each test runs against its own isolated database (see testdb_test.go).
 	t.Cleanup(func() { _ = pgStore.Delete(wfID) })
 
 	// Separate queue connections for dispatcher and worker

@@ -2,85 +2,20 @@ package workflow_test
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"os"
-	"strings"
 	"testing"
 
 	workflow "github.com/anatolykoptev/go-workflow"
 	"github.com/anatolykoptev/go-workflow/store"
-	"github.com/jmoiron/sqlx"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
-
-// requireTestDB validates that dsn refers to a database whose name contains "_test".
-// Returns a non-empty error string if the name looks like a production database.
-func requireTestDB(dsn string) string {
-	if dsn == "" {
-		return ""
-	}
-	// URL format: postgres://user:pass@host/dbname[?params]
-	if u, err := url.Parse(dsn); err == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
-		dbName := strings.TrimPrefix(u.Path, "/")
-		if idx := strings.IndexByte(dbName, '?'); idx >= 0 {
-			dbName = dbName[:idx]
-		}
-		if dbName != "" && !strings.Contains(dbName, "_test") {
-			return fmt.Sprintf("refusing to connect: DB name %q must contain \"_test\" (set GO_WORKFLOW_TEST_DSN to a test database)", dbName)
-		}
-		return ""
-	}
-	// Key-value format: "host=... dbname=go_workflow_test ..."
-	for _, part := range strings.Fields(dsn) {
-		if kv := strings.SplitN(part, "=", 2); len(kv) == 2 && kv[0] == "dbname" {
-			if !strings.Contains(kv[1], "_test") {
-				return fmt.Sprintf("refusing to connect: DB name %q must contain \"_test\" (set GO_WORKFLOW_TEST_DSN to a test database)", kv[1])
-			}
-			return ""
-		}
-	}
-	return ""
-}
-
-// testPgDSN returns a Postgres DSN for integration tests.
-// Skips the test if Postgres is unreachable.
-func testPgDSN(t *testing.T) string {
-	t.Helper()
-
-	dsn := os.Getenv("GO_WORKFLOW_TEST_DSN")
-	if dsn == "" {
-		dsn = "postgres://localhost:5432/go_workflow_test?sslmode=disable"
-	}
-	if msg := requireTestDB(dsn); msg != "" {
-		t.Fatalf("test-DB isolation guard: %s", msg)
-	}
-
-	db, err := sqlx.Open("pgx", dsn)
-	if err != nil {
-		t.Skip("postgres unavailable:", err)
-	}
-	if err := db.Ping(); err != nil {
-		t.Skip("postgres unavailable:", err)
-	}
-	db.Close()
-	// Serialize DB-backed tests across the `store` and `workflow` test binaries
-	// (they run in parallel by default and share one database). See dblock_test.go.
-	lockDB(t, dsn)
-	return dsn
-}
 
 // setupDispatcher creates a PostgresDispatcher and the backing PostgresBackend
 // (so callers can save the parent workflow required by the
-// step_queue→workflows FK). Cleanup is scoped per Dispatch (see
-// mustSaveParentWorkflow): no global DELETE is issued here, which would race
-// with the store package's DB tests running in a parallel test binary against
-// the same database.
+// step_queue→workflows FK) against a fresh, isolated per-test database. See
+// testdb_test.go.
 func setupDispatcher(t *testing.T) (*workflow.PostgresDispatcher, *store.StepQueue, *store.PostgresBackend) {
 	t.Helper()
 
-	dsn := testPgDSN(t)
+	dsn := newTestDB(t)
 
 	// Ensure migrations have run.
 	backend, err := store.NewPostgresBackend(dsn)
@@ -117,9 +52,9 @@ func setupDispatcher(t *testing.T) (*workflow.PostgresDispatcher, *store.StepQue
 // mustSaveParentWorkflow inserts the parent workflow row required by the
 // step_queue_workflow_id_fkey foreign key before a Dispatch enqueues steps for
 // it. Idempotent upsert (ON CONFLICT). Stale rows for wfID from a previous
-// crashed run are removed first (scoped — never a global DELETE that would
-// race with concurrent DB tests in the store package), and a t.Cleanup
-// removes this test's rows after it finishes.
+// crashed run are removed first, and a t.Cleanup removes this test's rows
+// after it finishes. Each test runs against its own isolated database (see
+// testdb_test.go), so there is no cross-test contention.
 func mustSaveParentWorkflow(t *testing.T, backend *store.PostgresBackend, wfID string) {
 	t.Helper()
 	if err := backend.Delete(wfID); err != nil {
