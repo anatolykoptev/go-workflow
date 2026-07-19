@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0](https://github.com/anatolykoptev/go-workflow/compare/v0.19.2...v0.20.0) (2026-07-19)
+
+
+### Features
+
+* **wf_status:** distinguish resumable cancel from terminal failure + surface artifact ([#42](https://github.com/anatolykoptev/go-workflow/issues/42)) ([a053310](https://github.com/anatolykoptev/go-workflow/commit/a0533109d3c47ec1735117cf39034993589e53d0))
+
 ## [0.19.2](https://github.com/anatolykoptev/go-workflow/compare/v0.19.1...v0.19.2) (2026-07-17)
 
 
