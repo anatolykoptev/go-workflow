@@ -258,6 +258,92 @@ func (w *Workflow) IsTerminal() bool {
 	return w.State == StateCompleted || w.State == StateFailed || w.State == StateCancelled
 }
 
+// ResumableArtifact reports whether a cancelled workflow is resumable via
+// Reopen (CurrentStep is a pending approval gate — the same condition
+// Reopen checks before transitioning back to StateWaitingApproval), and
+// when it is, surfaces the most recent surviving artifact path recorded
+// in a completed approval step's data.
+//
+// This is the status-side counterpart to Reopen: Reopen ACTS on the
+// CurrentStep/pending-approval condition, ResumableArtifact REPORTS it so
+// wf_status can distinguish a genuinely terminal failure (StateFailed
+// from a dead-lettered step — nothing to reopen into) from a recoverable
+// "step failed / BLOCKed, artifacts intact" cancel — see issue #296.
+//
+// Returns (false, "") when:
+//   - the workflow is not cancelled (running, waiting, paused, completed,
+//     or failed — only StateCancelled is reopen-eligible),
+//   - CurrentStep is empty or points at a non-approval / non-pending step
+//     (Reopen would refuse; surfacing resumable=true would over-promise),
+//   - or no completed approval step recorded a file path in its data.
+//
+// The artifact-path scan walks Steps in REVERSE order (most recent
+// completed approval first) and inspects Context[stepID] — the exact
+// store HandleApprovalWithData writes the approver's data payload to.
+// It looks for a string value that looks like a filesystem artifact path
+// (currently: a /tmp/ prefix, matching the go-wp wp_temp /tmp/go-wp/{project}/
+// convention where the merged render lives). The key name in the data map
+// is operator-controlled (templates say "Pass file path as data" without
+// pinning a key), so the scan is key-agnostic — any string field holding a
+// /tmp/ path qualifies. No filesystem existence check is performed: the
+// path is what was recorded at approval time, and statting would couple
+// this pure read to the filesystem; the caller can stat if it cares.
+func (w *Workflow) ResumableArtifact() (resumable bool, artifactPath string) {
+	if w.State != StateCancelled || w.CurrentStep == "" {
+		return false, ""
+	}
+	step := w.GetStep(w.CurrentStep)
+	if step == nil || step.Kind != StepApproval || step.State != StepPending {
+		return false, ""
+	}
+	// Walk completed approval steps most-recent-first; the latest compose/
+	// merge approval holds the surviving merged-render path. Returns
+	// (true, "") when resumable but no file path was recorded — the
+	// operator can still reopen+re-approve, they just don't get a
+	// salvageable-file hint.
+	for i := len(w.Steps) - 1; i >= 0; i-- {
+		s := w.Steps[i]
+		if s.Kind != StepApproval || s.State != StepCompleted {
+			continue
+		}
+		if path, ok := extractArtifactPath(w.Context[s.ID]); ok {
+			return true, path
+		}
+	}
+	return true, ""
+}
+
+// extractArtifactPath inspects an approval step's recorded data payload
+// (Context[stepID]) for a string value that looks like a filesystem
+// artifact path. The data shape is operator-controlled (templates say
+// "Pass file path as data" without pinning a key), so the scan is
+// key-agnostic over map fields. Returns ("", false) when no artifact-like
+// path is found.
+func extractArtifactPath(v any) (string, bool) {
+	switch val := v.(type) {
+	case map[string]any:
+		for _, field := range val {
+			if s, ok := field.(string); ok && isArtifactPath(s) {
+				return s, true
+			}
+		}
+	case string:
+		if isArtifactPath(val) {
+			return val, true
+		}
+	}
+	return "", false
+}
+
+// isArtifactPath reports whether s looks like a filesystem artifact path
+// worth surfacing as a surviving merged-render location. Currently
+// matches the go-wp wp_temp /tmp/go-wp/{project}/ convention where the
+// merged render JSONL lives. Narrow on purpose: a false positive would
+// point the operator at a non-artifact string and undermine the signal.
+func isArtifactPath(s string) bool {
+	return strings.HasPrefix(s, "/tmp/")
+}
+
 // AddCost merges a single step's cost into the workflow aggregate, creating the
 // aggregate map on first call. Safe to call from inside step executors after
 // they record their own StepCost.

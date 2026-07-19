@@ -1,0 +1,105 @@
+package workflow
+
+import "testing"
+
+// TestResumableArtifact covers the go-wp #296 fix: a workflow cancelled at a
+// pending approval gate (a BLOCK, not a terminal failure) is RESUMABLE via
+// Reopen, and any surviving merged-render artifact path recorded on an earlier
+// completed approval step is surfaced so an operator can salvage it rather than
+// rebuild.
+func TestResumableArtifact(t *testing.T) {
+	tests := []struct {
+		name         string
+		wf           *Workflow
+		wantResume   bool
+		wantArtifact string
+	}{
+		{
+			name: "cancelled at pending approval gate with /tmp artifact -> resumable + path",
+			wf: &Workflow{
+				State:       StateCancelled,
+				CurrentStep: "go-live",
+				Steps: []Step{
+					{ID: "compose", Kind: StepApproval, State: StepCompleted},
+					{ID: "go-live", Kind: StepApproval, State: StepPending},
+				},
+				Context: map[string]any{
+					"compose": map[string]any{"render_file": "/tmp/go-wp/piter/merged-57827.jsonl"},
+				},
+			},
+			wantResume:   true,
+			wantArtifact: "/tmp/go-wp/piter/merged-57827.jsonl",
+		},
+		{
+			name: "cancelled at pending gate, no recorded file -> resumable, empty path",
+			wf: &Workflow{
+				State:       StateCancelled,
+				CurrentStep: "go-live",
+				Steps: []Step{
+					{ID: "go-live", Kind: StepApproval, State: StepPending},
+				},
+				Context: map[string]any{},
+			},
+			wantResume:   true,
+			wantArtifact: "",
+		},
+		{
+			name: "terminal failure (dead-lettered step, not a pending gate) -> NOT resumable",
+			wf: &Workflow{
+				State:       StateFailed,
+				CurrentStep: "enrich",
+				Steps: []Step{
+					{ID: "enrich", Kind: StepTool, State: StepFailed},
+				},
+			},
+			wantResume:   false,
+			wantArtifact: "",
+		},
+		{
+			name: "cancelled mid tool-step (current step is not a pending approval) -> NOT resumable",
+			wf: &Workflow{
+				State:       StateCancelled,
+				CurrentStep: "enrich",
+				Steps: []Step{
+					{ID: "enrich", Kind: StepTool, State: StepRunning},
+				},
+			},
+			wantResume:   false,
+			wantArtifact: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotResume, gotArtifact := tt.wf.ResumableArtifact()
+			if gotResume != tt.wantResume {
+				t.Errorf("resumable = %v, want %v", gotResume, tt.wantResume)
+			}
+			if gotArtifact != tt.wantArtifact {
+				t.Errorf("artifactPath = %q, want %q", gotArtifact, tt.wantArtifact)
+			}
+		})
+	}
+}
+
+// TestBuildWFStatusOutput_SurfacesResumable ensures the wf_status output carries
+// the resumable + artifact_path signal (additive fields, #296).
+func TestBuildWFStatusOutput_SurfacesResumable(t *testing.T) {
+	wf := &Workflow{
+		State:       StateCancelled,
+		CurrentStep: "go-live",
+		Steps: []Step{
+			{ID: "compose", Kind: StepApproval, State: StepCompleted},
+			{ID: "go-live", Kind: StepApproval, State: StepPending},
+		},
+		Context: map[string]any{
+			"compose": map[string]any{"render_file": "/tmp/go-wp/piter/merged-57827.jsonl"},
+		},
+	}
+	out := BuildWFStatusOutput(wf)
+	if !out.Resumable {
+		t.Error("Resumable = false, want true for a cancel at a pending approval gate")
+	}
+	if out.ArtifactPath != "/tmp/go-wp/piter/merged-57827.jsonl" {
+		t.Errorf("ArtifactPath = %q, want the surviving merged-render path", out.ArtifactPath)
+	}
+}
