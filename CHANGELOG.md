@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.0](https://github.com/anatolykoptev/go-workflow/compare/v0.20.0...v0.21.0) (2026-10-09)
+
+
+### Features
+
+* **mcp:** propagate workflow owner identity to self-called tool steps ([#49](https://github.com/anatolykoptev/go-workflow/issues/49)) ([ca97b2c](https://github.com/anatolykoptev/go-workflow/commit/ca97b2c07cfe23c7e5c6542cd9b230fe307adef7))
+
 ## [0.20.0](https://github.com/anatolykoptev/go-workflow/compare/v0.19.2...v0.20.0) (2026-07-19)
 
 
