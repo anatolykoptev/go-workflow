@@ -221,9 +221,10 @@ func (r *MCPToolRunner) getSession(ctx context.Context, serverID string) (*mcp.C
 	}, nil)
 
 	httpClient := &http.Client{Timeout: 300 * time.Second}
-	if hdrs, ok := r.headers[serverID]; ok && len(hdrs) > 0 {
-		httpClient.Transport = &headerTransport{headers: hdrs}
-	}
+	// Always wrap: headerTransport also stamps the per-request workflow
+	// identity (X-MCP-User) from ctx — servers without static headers
+	// still need it (e.g. the go-wp self-call behind loopback auth).
+	httpClient.Transport = &headerTransport{headers: r.headers[serverID]}
 
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:             url,
