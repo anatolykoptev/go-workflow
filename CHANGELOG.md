@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.1](https://github.com/anatolykoptev/go-workflow/compare/v0.21.0...v0.21.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **mcp:** install identity transport on sessions without static headers ([#51](https://github.com/anatolykoptev/go-workflow/issues/51)) ([ad7d665](https://github.com/anatolykoptev/go-workflow/commit/ad7d665acb35e5010a9ac5c4a339554129670514))
+
 ## [0.21.0](https://github.com/anatolykoptev/go-workflow/compare/v0.20.0...v0.21.0) (2026-10-09)
 
 
