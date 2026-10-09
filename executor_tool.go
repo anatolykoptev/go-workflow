@@ -40,10 +40,15 @@ func (e *ToolExecutor) Execute(ctx context.Context, step *Step, wf *Workflow) er
 		}
 	}
 
+	callCtx := ctx
+	if runAs, _ := step.Config["run_as"].(string); runAs != runAsOperator {
+		callCtx = withMCPIdentity(ctx, wf.Owner)
+	}
+
 	var result string
 	err := e.breakers.call("tool:"+toolName, func() error {
 		var callErr error
-		result, callErr = e.runner.Execute(ctx, toolName, args)
+		result, callErr = e.runner.Execute(callCtx, toolName, args)
 		return callErr
 	})
 	if err != nil {
