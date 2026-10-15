@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.2](https://github.com/anatolykoptev/go-workflow/compare/v0.21.1...v0.21.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **templates:** substitute caller params structure-preservingly ([#53](https://github.com/anatolykoptev/go-workflow/issues/53)) ([18ed92e](https://github.com/anatolykoptev/go-workflow/commit/18ed92ed39cc748b0bc7e3cdf5817c9a5830aa1d))
+
 ## [0.21.1](https://github.com/anatolykoptev/go-workflow/compare/v0.21.0...v0.21.1) (2026-10-09)
 
 
