@@ -28,7 +28,7 @@ var deprecatedMarkerWarnedSet sync.Map
 // references a missing key or when the value cannot be coerced to the
 // requested type.
 //
-// Classic {{var}} substitution is unchanged and backward compatible.
+// {{var}} substitution is single-pass and never expands ${ENV}.
 func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 	// 1. Typed markers first — they need quote stripping.
 	// Deprecated: prefer typed ParamSpec declarations instead of @@int/@@bool/@@float markers.
@@ -40,12 +40,7 @@ func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 		}
 		groups := typedMarkerRe.FindStringSubmatch(match)
 		kind, name := groups[1], groups[2]
-		warnKey := kind + ":" + name
-		if _, alreadyWarned := deprecatedMarkerWarnedSet.LoadOrStore(warnKey, struct{}{}); !alreadyWarned {
-			slog.Warn("template: @@type:NAME marker is deprecated; use typed ParamSpec instead",
-				"marker", match, "param", name,
-				"migration", fmt.Sprintf(`use {"type":"%s"} in params declaration instead of @@%s:%s`, kind, kind, name))
-		}
+		warnDeprecatedMarker(match, kind, name)
 		v, ok := wf.Context[name]
 		if !ok {
 			firstErr = fmt.Errorf("ResolveRefs: %s:%s not in context", kind, name)
@@ -61,14 +56,21 @@ func ResolveRefsErr(s string, wf *Workflow) (string, error) {
 	if firstErr != nil {
 		return s, firstErr
 	}
-
-	// 2. Classic {{var}} string substitution.
-	for id, val := range wf.Context {
-		s = strings.ReplaceAll(s, "{{"+id+"}}", fmt.Sprintf("%v", val))
-	}
-	s = resolveEnvVars(s)
+	// 2. {{var}} substitution in a single pass: substituted values are never
+	// re-scanned, and no ${ENV} expansion happens here. The text handled at
+	// runtime may carry caller- or step-output-derived content; environment
+	// expansion is reserved for template-author text at instantiation time.
+	s = refRe.ReplaceAllStringFunc(s, func(match string) string {
+		if val, ok := wf.Context[match[2:len(match)-2]]; ok {
+			return fmt.Sprintf("%v", val)
+		}
+		return match
+	})
 	return s, nil
 }
+
+// refRe matches a {{name}} reference.
+var refRe = regexp.MustCompile(`\{\{[^{}]+\}\}`)
 
 // coerceTyped converts v to the bare JSON literal for the requested kind
 // (int, bool, float). Returns the literal string without quotes. Returns
@@ -175,8 +177,10 @@ func resolvePromptRefs(s string, wf *Workflow) string {
 }
 
 // ResolveRefs replaces {{stepID}} placeholders in a string with workflow
-// context values. Also resolves ${VAR} patterns with environment variables
-// (n8n compat). Preserves the original string-only signature for backward
+// context values. It does NOT expand ${VAR} environment references: the
+// substituted values (step outputs, caller data) are untrusted. Environment
+// expansion happens only on template-author text, at instantiation. Preserves
+// the original string-only signature for backward
 // compatibility. Callers that need typed @@int/@@bool/@@float substitution
 // should migrate to ResolveRefsErr.
 //
@@ -197,18 +201,24 @@ func ResolveRefs(s string, wf *Workflow) string {
 var envVarRegex = regexp.MustCompile(`\$\{(\w+)\}`)
 
 // resolveEnvVars replaces ${VAR} patterns with os.Getenv values.
-// Only replaces if the env var is actually set (non-empty).
+// Only replaces if the env var is actually set (non-empty). Call it only on
+// template-author text, never on text containing caller or step-output data.
 func resolveEnvVars(s string) string {
 	return envVarRegex.ReplaceAllStringFunc(s, func(match string) string {
 		groups := envVarRegex.FindStringSubmatch(match)
 		if len(groups) < 2 {
 			return match
 		}
-		if val := os.Getenv(groups[1]); val != "" {
-			return val
-		}
-		return match // keep placeholder if env var not set
+		return envOrKeep(groups[1], match)
 	})
+}
+
+// envOrKeep returns the value of env var name when set and non-empty, else keep.
+func envOrKeep(name, keep string) string {
+	if val := os.Getenv(name); val != "" {
+		return val
+	}
+	return keep
 }
 
 // resolveRefValue resolves {"$ref": "stepID.field.sub"} map patterns.
