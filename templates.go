@@ -310,7 +310,10 @@ func (ts *TemplateStore) Instantiate(templateName, workflowID, owner string, par
 		return nil, fmt.Errorf("template %q: %w", templateName, err)
 	}
 
-	steps, err := instantiateSteps(tmpl.Steps, merged, tmpl.Params)
+	// Step configs only see DECLARED params (tmpl.Params or tmpl.Defaults): an
+	// undeclared caller-supplied name must not replace a {{stepId}} runtime
+	// reference. Name/description below keep using every merged param.
+	steps, err := instantiateSteps(tmpl.Steps, declaredOnly(tmpl, merged), tmpl.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -324,11 +327,9 @@ func (ts *TemplateStore) Instantiate(templateName, workflowID, owner string, par
 		wf.IdempotencyKey = key
 	}
 
-	// Substitute variables in name/description
-	for k, v := range merged {
-		wf.Name = strings.ReplaceAll(wf.Name, "{{"+k+"}}", fmt.Sprintf("%v", v))
-		wf.Description = strings.ReplaceAll(wf.Description, "{{"+k+"}}", fmt.Sprintf("%v", v))
-	}
+	// Substitute variables in name/description (single pass, no re-scan).
+	wf.Name = substituteText(wf.Name, merged)
+	wf.Description = substituteText(wf.Description, merged)
 
 	return wf, nil
 }
@@ -462,40 +463,25 @@ func instantiateStep(ts TemplateStep, merged map[string]any, specs ...ParamsMap)
 		paramSpecs = specs[0]
 	}
 
-	// Pre-substitute: for non-string typed params, replace "{{name}}"
-	// (with surrounding JSON quotes) with the bare JSON literal so the
-	// resulting JSON is valid typed JSON, not a quoted number/bool.
-	configStr := string(ts.Config)
-	if paramSpecs != nil {
-		configStr = applyTypedSubstitutions(configStr, merged, paramSpecs)
-	}
-
-	// Build a stub Workflow with merged params as Context so ResolveRefsErr
-	// handles both classic {{x}} substitution and typed @@int/@@bool/@@float
-	// markers in a single pass. The inline strings.ReplaceAll loop used here
-	// previously bypassed typed-marker logic entirely.
-	stub := &Workflow{Context: merged}
-
-	configStr, err := ResolveRefsErr(configStr, stub)
+	// Parse the template config first, then substitute only inside string
+	// values (see subst.go); param values can never restructure the config.
+	sub := substituter{params: merged, specs: paramSpecs}
+	tree, err := sub.substituteConfig(ts.Config)
 	if err != nil {
-		return Step{}, fmt.Errorf("step %s: typed-marker substitution failed: %w", ts.ID, err)
+		return Step{}, fmt.Errorf("step %s: config substitution failed: %w", ts.ID, err)
 	}
-
-	var config map[string]any
-	if err := json.Unmarshal([]byte(configStr), &config); err != nil {
-		return Step{}, fmt.Errorf("step %s: invalid config after substitution: %w", ts.ID, err)
+	config, ok := tree.(map[string]any)
+	if !ok {
+		return Step{}, fmt.Errorf("step %s: config must be a JSON object", ts.ID)
 	}
 
 	// Merge step-level retry/on_error into config (engine reads from config)
 	if len(ts.Retry) > 0 {
-		retryStr, err := ResolveRefsErr(string(ts.Retry), stub)
+		retryVal, err := sub.substituteConfig(ts.Retry)
 		if err != nil {
-			return Step{}, fmt.Errorf("step %s: retry typed-marker substitution failed: %w", ts.ID, err)
+			return Step{}, fmt.Errorf("step %s: retry substitution failed: %w", ts.ID, err)
 		}
-		var retryVal any
-		if err := json.Unmarshal([]byte(retryStr), &retryVal); err == nil {
-			config["retry"] = retryVal
-		}
+		config["retry"] = retryVal
 	}
 	if ts.OnError != "" {
 		config["on_error"] = ts.OnError
@@ -518,36 +504,6 @@ func instantiateStep(ts TemplateStep, merged map[string]any, specs ...ParamsMap)
 		DependsOn: ts.DependsOn,
 		State:     StepPending,
 	}, nil
-}
-
-// applyTypedSubstitutions replaces "{{name}}" (with surrounding JSON quotes)
-// with bare JSON literals for non-string typed params. This ensures that e.g.
-// "wait_ms": "{{wait_ms}}" in the template becomes "wait_ms": 6000 (number)
-// after substitution, rather than the quoted string "6000".
-//
-// The substitution is keyed on the JSON-quoted form `"{{name}}"` so it only
-// fires when the placeholder is the entire JSON string value, not when it
-// appears inline in a larger string (e.g. "prefix-{{name}}-suffix" is left
-// to the classic ResolveRefs string-replacement pass).
-func applyTypedSubstitutions(s string, merged map[string]any, specs ParamsMap) string {
-	for name, spec := range specs {
-		if spec.Type == ParamTypeString || spec.Type == "" {
-			continue
-		}
-		v, ok := merged[name]
-		if !ok {
-			continue
-		}
-		// Encode the coerced value as a bare JSON literal.
-		encoded, err := json.Marshal(v)
-		if err != nil {
-			continue
-		}
-		// Replace `"{{name}}"` (quoted placeholder) with bare literal.
-		placeholder := `"{{` + name + `}}"`
-		s = strings.ReplaceAll(s, placeholder, string(encoded))
-	}
-	return s
 }
 
 func (ts *TemplateStore) loadAll() {
@@ -613,4 +569,18 @@ func (ts *TemplateStore) loadNativeTemplate(fullPath, fname string) {
 		return
 	}
 	ts.templates[strings.TrimSuffix(fname, ".json")] = tmpl
+}
+
+// declaredOnly returns the subset of merged whose names the template declares
+// in Params or Defaults.
+func declaredOnly(tmpl *Template, merged map[string]any) map[string]any {
+	out := make(map[string]any, len(merged))
+	for k, v := range merged {
+		_, inParams := tmpl.Params[k]
+		_, inDefaults := tmpl.Defaults[k]
+		if inParams || inDefaults {
+			out[k] = v
+		}
+	}
+	return out
 }

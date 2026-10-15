@@ -32,11 +32,10 @@ func TestParamSpec_IntPreservesInt64Precision(t *testing.T) {
 }
 
 // TestParamSpec_IntCoercionProducesCorrectLiteral verifies that an int64
-// param (> 2^53) flows through validateAndCoerceParams + applyTypedSubstitutions
-// and produces a JSON literal containing the exact integer string — not
-// scientific notation, not a rounded float64 representation.
-// Note: step.Config (map[string]any) re-decodes numbers via float64 per Go
-// stdlib; this test verifies the intermediate JSON wire string is correct.
+// param (> 2^53) keeps its exact value through validateAndCoerceParams, and
+// that typed substitution then yields a JSON number in step.Config. Config
+// values are decoded as float64, so an integer above 2^53 is NOT exact there
+// (unchanged behaviour); this test asserts the type, not the precision.
 func TestParamSpec_IntCoercionProducesCorrectLiteral(t *testing.T) {
 	specs := ParamsMap{
 		"chat_id": ParamSpec{Type: ParamTypeInt, Description: "Telegram chat id"},
@@ -55,14 +54,16 @@ func TestParamSpec_IntCoercionProducesCorrectLiteral(t *testing.T) {
 		t.Errorf("after coerce: got %d, want 9007199254740993", v)
 	}
 
-	// Substitution: json.Marshal(int64) must emit bare integer literal.
-	configStr := `{"tool":"send","input":{"chat_id":"{{chat_id}}"}}`
-	got := applyTypedSubstitutions(configStr, merged, specs)
-	if !strings.Contains(got, "9007199254740993") {
-		t.Errorf("substituted config = %s; want to contain 9007199254740993 as bare integer", got)
+	// Substitution: the typed whole-value reference must yield a numeric value
+	// (re-decoded via float64, as before), never a quoted string.
+	ts := TemplateStep{ID: "s", Kind: "tool", Config: json.RawMessage(`{"tool":"send","input":{"chat_id":"{{chat_id}}"}}`)}
+	step, err := instantiateStep(ts, merged, specs)
+	if err != nil {
+		t.Fatalf("instantiateStep: %v", err)
 	}
-	if strings.Contains(got, "e+") || strings.Contains(got, "E+") || strings.Contains(got, "e15") {
-		t.Errorf("substituted config = %s; must not contain scientific notation", got)
+	got := step.Config["input"].(map[string]any)["chat_id"]
+	if _, isNum := got.(float64); !isNum {
+		t.Errorf("chat_id = %#v (%T), want a JSON number", got, got)
 	}
 }
 
