@@ -60,7 +60,7 @@ jobs:
         run: make preflight
 
       - name: golangci-lint (new issues vs main)
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.14.0
           args: --new-from-merge-base=origin/main --timeout=5m
