@@ -1,6 +1,10 @@
 package workflow
 
-import "testing"
+import (
+	"encoding/json"
+	"strconv"
+	"testing"
+)
 
 // --- Expression conversion ---
 
@@ -30,10 +34,9 @@ func TestConvertN8nExpressions(t *testing.T) {
 
 // --- Environment variable resolution ---
 
-func TestResolveEnvVars(t *testing.T) {
+func TestTemplateAuthorEnvVarsExpand(t *testing.T) {
 	t.Setenv("TEST_VAR", "hello")
 	t.Setenv("EMPTY_VAR", "")
-
 	tests := []struct {
 		input string
 		want  string
@@ -41,14 +44,18 @@ func TestResolveEnvVars(t *testing.T) {
 		{"${TEST_VAR}", "hello"},
 		{"prefix-${TEST_VAR}-suffix", "prefix-hello-suffix"},
 		{"${NONEXISTENT_VAR}", "${NONEXISTENT_VAR}"}, // keep if not set
+		{"${EMPTY_VAR}", "${EMPTY_VAR}"},             // empty counts as unset
 		{"no vars here", "no vars here"},
 		{"${TEST_VAR} and ${TEST_VAR}", "hello and hello"},
 	}
-
 	for _, tt := range tests {
-		got := resolveEnvVars(tt.input)
-		if got != tt.want {
-			t.Errorf("resolveEnvVars(%q) = %q, want %q", tt.input, got, tt.want)
+		ts := TemplateStep{ID: "s", Kind: "tool", Config: json.RawMessage(`{"v":` + strconv.Quote(tt.input) + `}`)}
+		step, err := instantiateStep(ts, map[string]any{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := step.Config["v"]; got != tt.want {
+			t.Errorf("instantiate(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }

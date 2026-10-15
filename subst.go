@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 )
 
@@ -147,4 +148,27 @@ func warnDeprecatedMarker(match, kind, name string) {
 			"marker", match, "param", name,
 			"migration", fmt.Sprintf(`use {"type":"%s"} in params declaration instead of @@%s:%s`, kind, kind, name))
 	}
+}
+
+// envOrKeep returns the value of env var name when set and non-empty, else
+// keep. It is the only environment lookup in the package and is reached only
+// from substituter.str, i.e. on template-author text at instantiation.
+func envOrKeep(name, keep string) string {
+	if val := os.Getenv(name); val != "" {
+		return val
+	}
+	return keep
+}
+
+// substituteText replaces {{name}} references in s with the string form of the
+// matching param, in a single pass (substituted values are not re-scanned).
+// Unknown names stay literal; no ${ENV} expansion. Used for workflow
+// name/description, which are plain text.
+func substituteText(s string, params map[string]any) string {
+	return refRe.ReplaceAllStringFunc(s, func(match string) string {
+		if val, ok := params[match[2:len(match)-2]]; ok {
+			return fmt.Sprintf("%v", val)
+		}
+		return match
+	})
 }

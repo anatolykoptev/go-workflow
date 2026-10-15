@@ -32,8 +32,10 @@ func TestParamSpec_IntPreservesInt64Precision(t *testing.T) {
 }
 
 // TestParamSpec_IntCoercionProducesCorrectLiteral verifies that an int64
-// param (> 2^53) flows through validateAndCoerceParams and typed substitution without
-// being rejected, keeping the exact int64 after coercion.
+// param (> 2^53) keeps its exact value through validateAndCoerceParams, and
+// that typed substitution then yields a JSON number in step.Config. Config
+// values are decoded as float64, so an integer above 2^53 is NOT exact there
+// (unchanged behaviour); this test asserts the type, not the precision.
 func TestParamSpec_IntCoercionProducesCorrectLiteral(t *testing.T) {
 	specs := ParamsMap{
 		"chat_id": ParamSpec{Type: ParamTypeInt, Description: "Telegram chat id"},

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -278,5 +279,70 @@ func TestResolveRefs_SubstitutedStepOutputNotRescanned(t *testing.T) {
 		if got := ResolveRefs("{{a}}|{{b}}", wf); got != "{{b}}|LEAK" {
 			t.Fatalf("iteration %d: got %q, want single-pass result", i, got)
 		}
+	}
+}
+
+func TestInstantiateStep_RetrySubstitutionErrorIsReturned(t *testing.T) {
+	t.Parallel()
+	ts := TemplateStep{
+		ID:     "s1",
+		Kind:   "tool",
+		Config: json.RawMessage(`{"tool":"t"}`),
+		Retry:  json.RawMessage(`{"max_attempts":"@@int:n"}`),
+	}
+	_, err := instantiateStep(ts, map[string]any{"n": "not-a-number"})
+	if err == nil {
+		t.Fatal("expected an error: retry must not be silently dropped")
+	}
+	if !strings.Contains(err.Error(), "retry substitution failed") {
+		t.Fatalf("error = %v, want it to name the retry substitution", err)
+	}
+}
+
+func TestTemplateStore_Instantiate_NameDescriptionSinglePass(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	tmpl := `{"name":"{{a}}-{{b}}","description":"d {{a}}|{{b}}","params":{"a":"x","b":"y"},
+		"steps":[{"id":"s","kind":"tool","config":{"tool":"t"}}]}`
+	if err := os.WriteFile(filepath.Join(dir, "demo.json"), []byte(tmpl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewTemplateStore(dir)
+	for i := 0; i < 50; i++ { // map iteration order is random; exercise it
+		wf, err := store.Instantiate("demo", "wf1", "owner", map[string]any{"a": "{{b}}", "b": "X"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if wf.Name != "{{b}}-X" || wf.Description != "d {{b}}|X" {
+			t.Fatalf("iteration %d: name=%q description=%q, want values not re-scanned", i, wf.Name, wf.Description)
+		}
+	}
+}
+
+func TestTemplateStore_Instantiate_UndeclaredParamDoesNotShadowStepRef(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	tmpl := `{"name":"Login {{username}}","params":{"topic":"t"},
+		"steps":[
+		 {"id":"publish","kind":"tool","config":{"tool":"p"}},
+		 {"id":"notify","kind":"tool","depends_on":["publish"],"config":{"tool":"n","args":{"msg":"{{publish}}","t":"{{topic}}"}}}]}`
+	if err := os.WriteFile(filepath.Join(dir, "demo.json"), []byte(tmpl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewTemplateStore(dir)
+	wf, err := store.Instantiate("demo", "wf1", "owner",
+		map[string]any{"topic": "declared-value", "publish": "caller-chosen", "username": "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := wf.Steps[1].Config["args"].(map[string]any)
+	if args["msg"] != "{{publish}}" {
+		t.Errorf("msg = %q, want {{publish}} kept for runtime resolution (undeclared caller param must not substitute)", args["msg"])
+	}
+	if args["t"] != "declared-value" {
+		t.Errorf("t = %q, want declared param substituted", args["t"])
+	}
+	if wf.Name != "Login alice" {
+		t.Errorf("name = %q, want undeclared param to still fill the workflow name", wf.Name)
 	}
 }

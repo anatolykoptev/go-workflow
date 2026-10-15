@@ -3,7 +3,6 @@ package workflow
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -195,30 +194,6 @@ func ResolveRefs(s string, wf *Workflow) string {
 		slog.Warn("ResolveRefs typed-marker error", "err", err)
 	}
 	return out
-}
-
-// envVarRegex matches ${VAR_NAME} patterns.
-var envVarRegex = regexp.MustCompile(`\$\{(\w+)\}`)
-
-// resolveEnvVars replaces ${VAR} patterns with os.Getenv values.
-// Only replaces if the env var is actually set (non-empty). Call it only on
-// template-author text, never on text containing caller or step-output data.
-func resolveEnvVars(s string) string {
-	return envVarRegex.ReplaceAllStringFunc(s, func(match string) string {
-		groups := envVarRegex.FindStringSubmatch(match)
-		if len(groups) < 2 {
-			return match
-		}
-		return envOrKeep(groups[1], match)
-	})
-}
-
-// envOrKeep returns the value of env var name when set and non-empty, else keep.
-func envOrKeep(name, keep string) string {
-	if val := os.Getenv(name); val != "" {
-		return val
-	}
-	return keep
 }
 
 // resolveRefValue resolves {"$ref": "stepID.field.sub"} map patterns.
