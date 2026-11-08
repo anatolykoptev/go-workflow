@@ -252,3 +252,10 @@ All external dependencies are injected via interfaces:
 ## Distributed Execution
 
 Dispatch steps to remote workers via PostgreSQL SKIP LOCKED queue. Features: heartbeat protocol, concurrency limits, LISTEN/NOTIFY, graceful shutdown. Default `LocalDispatcher` preserves in-process execution (zero config change).
+
+## Status and contributing
+
+Pre-1.0 (`v0.21.x`): the API can change in a minor release. Releases and the changelog come from
+release-please, see [CHANGELOG.md](CHANGELOG.md). Contribution rules are in
+[CONTRIBUTING.md](CONTRIBUTING.md), vulnerability reporting in [SECURITY.md](SECURITY.md), and every
+document in the repository is indexed in [docs/INDEX.md](docs/INDEX.md).
