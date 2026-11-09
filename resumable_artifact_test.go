@@ -24,11 +24,11 @@ func TestResumableArtifact(t *testing.T) {
 					{ID: "go-live", Kind: StepApproval, State: StepPending},
 				},
 				Context: map[string]any{
-					"compose": map[string]any{"render_file": "/tmp/go-wp/piter/merged-57827.jsonl"},
+					"compose": map[string]any{"render_file": "/tmp/go-wp/site-a/merged-57827.jsonl"},
 				},
 			},
 			wantResume:   true,
-			wantArtifact: "/tmp/go-wp/piter/merged-57827.jsonl",
+			wantArtifact: "/tmp/go-wp/site-a/merged-57827.jsonl",
 		},
 		{
 			name: "cancelled at pending gate, no recorded file -> resumable, empty path",
@@ -92,14 +92,14 @@ func TestBuildWFStatusOutput_SurfacesResumable(t *testing.T) {
 			{ID: "go-live", Kind: StepApproval, State: StepPending},
 		},
 		Context: map[string]any{
-			"compose": map[string]any{"render_file": "/tmp/go-wp/piter/merged-57827.jsonl"},
+			"compose": map[string]any{"render_file": "/tmp/go-wp/site-a/merged-57827.jsonl"},
 		},
 	}
 	out := BuildWFStatusOutput(wf)
 	if !out.Resumable {
 		t.Error("Resumable = false, want true for a cancel at a pending approval gate")
 	}
-	if out.ArtifactPath != "/tmp/go-wp/piter/merged-57827.jsonl" {
+	if out.ArtifactPath != "/tmp/go-wp/site-a/merged-57827.jsonl" {
 		t.Errorf("ArtifactPath = %q, want the surviving merged-render path", out.ArtifactPath)
 	}
 }
@@ -127,18 +127,18 @@ func TestResumableArtifact_ToolStepAndNestedAndDeterminism(t *testing.T) {
 	}{
 		{
 			name: "artifact recorded on a TOOL step (not approval) is found",
-			ctx:  map[string]any{"merge": map[string]any{"render_file": "/tmp/go-wp/piter/merged-1.jsonl"}},
-			want: "/tmp/go-wp/piter/merged-1.jsonl",
+			ctx:  map[string]any{"merge": map[string]any{"render_file": "/tmp/go-wp/site-a/merged-1.jsonl"}},
+			want: "/tmp/go-wp/site-a/merged-1.jsonl",
 		},
 		{
 			name: "nested one level deep is found",
-			ctx:  map[string]any{"merge": map[string]any{"result": map[string]any{"render_file": "/tmp/go-wp/piter/merged-2.jsonl"}}},
-			want: "/tmp/go-wp/piter/merged-2.jsonl",
+			ctx:  map[string]any{"merge": map[string]any{"result": map[string]any{"render_file": "/tmp/go-wp/site-a/merged-2.jsonl"}}},
+			want: "/tmp/go-wp/site-a/merged-2.jsonl",
 		},
 		{
 			name: "bare string payload is found",
-			ctx:  map[string]any{"merge": "/tmp/go-wp/piter/merged-3.jsonl"},
-			want: "/tmp/go-wp/piter/merged-3.jsonl",
+			ctx:  map[string]any{"merge": "/tmp/go-wp/site-a/merged-3.jsonl"},
+			want: "/tmp/go-wp/site-a/merged-3.jsonl",
 		},
 		{
 			name: "multiple candidates -> smallest (deterministic), not random map order",
