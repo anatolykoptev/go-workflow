@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.3](https://github.com/anatolykoptev/go-workflow/compare/v0.21.2...v0.21.3) (2026-11-12)
+
+
+### Documentation
+
+* bring repository documents up to the repo-standards set ([#59](https://github.com/anatolykoptev/go-workflow/issues/59)) ([655340f](https://github.com/anatolykoptev/go-workflow/commit/655340f2f09d266f9022ef3b098bee489bbd4b67))
+
 ## [0.21.2](https://github.com/anatolykoptev/go-workflow/compare/v0.21.1...v0.21.2) (2026-10-15)
 
 
