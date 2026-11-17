@@ -282,5 +282,5 @@ jobs:
       - name: golangci-lint (new issues vs main)
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.14.0
+          version: v2.15.0
           args: --new-from-merge-base=origin/main --timeout=5m
